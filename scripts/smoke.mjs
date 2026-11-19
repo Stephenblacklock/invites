@@ -185,6 +185,59 @@ await bob.post('/logout', {});
 const after = await bob.req('/');
 ok(after.status === 303 && loc(after) === '/login', 'logout clears the session');
 
+// ------------------------------------------------------------ token API
+{
+	const API_TOKEN = 'api-token-for-smoke-tests-0123456789';
+	const call = (path, { method = 'GET', body, token = API_TOKEN } = {}) =>
+		fetch(BASE + path, {
+			method,
+			headers: {
+				'content-type': 'application/json',
+				'cf-connecting-ip': '10.0.9.9',
+				...(token ? { authorization: `Bearer ${token}` } : {})
+			},
+			body: body ? JSON.stringify(body) : undefined
+		});
+	const spec = await fetch(BASE + '/api/v1/openapi.json');
+	ok(spec.status === 200 && (await spec.json()).openapi === '3.0.3', 'OpenAPI spec is public');
+	ok((await call('/api/v1/events', { token: null })).status === 401, 'API without a token is 401');
+	ok((await call('/api/v1/events', { token: 'wrong' })).status === 401, 'API with a wrong token is 401');
+	const cookieOnly = await alice.req('/api/v1/events', { headers: { accept: 'application/json' } });
+	ok(cookieOnly.status === 401, 'a friend session cookie does not open the API');
+
+	const noFields = await call('/api/v1/events', { method: 'POST', body: { title: 'X' } });
+	ok(noFields.status === 400, 'API create without a start date is 400');
+	const unknown = await call('/api/v1/events', { method: 'POST', body: { title: 'X', start_date: addDays(4), colour: 'red' } });
+	ok(unknown.status === 400, 'API create with an unknown field is 400');
+	const pastApi = await call('/api/v1/events', { method: 'POST', body: { title: 'Old', start_date: '2020-01-01' } });
+	ok(pastApi.status === 400, 'API create of a finished event is 400');
+
+	const mk = await call('/api/v1/events', {
+		method: 'POST',
+		body: { title: 'Ice Bar', description: 'Cold drinks', location: 'Shoreditch', tags: ['Drinks', 'winter'], start_date: addDays(9) }
+	});
+	const made = await mk.json();
+	ok(mk.status === 201 && made.event.created_by === 'Stephen' && made.event.interested.includes('Stephen'), 'API creates an event as Stephen');
+	const dupe = await call('/api/v1/events', { method: 'POST', body: { title: 'ice bar', start_date: addDays(9) } });
+	ok(dupe.status === 409, 'API refuses a duplicate title + start date');
+
+	const list = await (await call('/api/v1/events?q=ice')).json();
+	ok(list.events.some((e) => e.id === made.event.id), 'API list finds the event by text');
+	const detail = await (await call(`/api/v1/events/${made.event.id}`)).json();
+	ok(Array.isArray(detail.event.comments) && Array.isArray(detail.event.date_options), 'API get returns poll and comments');
+	ok((await call('/api/v1/events/999999')).status === 404, 'API get of a missing event is 404');
+
+	const patch = await call(`/api/v1/events/${made.event.id}`, { method: 'PATCH', body: { location: 'Bow' } });
+	const patched = await patch.json();
+	ok(patch.status === 200 && patched.event.location === 'Bow' && patched.event.title === 'Ice Bar', 'API patch changes only the given field');
+	const aliceEvent = await call(`/api/v1/events/${evId}`, { method: 'PATCH', body: { location: 'Nope' } });
+	ok(aliceEvent.status === 403, "API cannot edit someone else's event");
+
+	const plansApi = await (await call('/api/v1/plans')).json();
+	ok(plansApi.events.some((e) => e.id === made.event.id), 'API plans lists the event');
+	ok((await call(`/api/v1/events/${made.event.id}`, { method: 'DELETE' })).status === 405, 'API has no delete');
+}
+
 // Creator deletes
 const del = await alice.post(evPath + '?/delete', {});
 ok(del.status === 303 && loc(del) === '/plans', 'creator can delete the event');

@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { COOKIE, passwordConfigured, readSession } from '#lib/server/auth.js';
 import { db, getPerson } from '#lib/server/db.js';
+import { apiError, authenticate } from '#lib/server/api.js';
 
 const PUBLIC_PATHS = new Set(['/login', '/healthz', '/manifest.webmanifest', '/robots.txt']);
 const isAsset = (p) => p.startsWith('/_app/') || p.startsWith('/icon');
@@ -23,6 +24,20 @@ export async function handle({ event, resolve }) {
 			return withHeaders(new Response('ok'));
 		} catch {
 			return withHeaders(new Response('db error', { status: 500 }));
+		}
+	}
+
+	// Token-authenticated JSON API: its own bearer auth, no cookie session. The spec is public.
+	if (path.startsWith('/api/v1/')) {
+		if (path !== '/api/v1/openapi.json') {
+			const auth = authenticate(event);
+			if (auth.response) return withHeaders(auth.response);
+			event.locals.person = auth.person;
+		}
+		try {
+			return withHeaders(await resolve(event));
+		} catch {
+			return withHeaders(apiError(500, 'Internal error'));
 		}
 	}
 

@@ -25,6 +25,8 @@ and the app refuses to serve anything until a password of at least 8 characters 
 | `INVITES_PASSWORD` | yes | Shared password, 8+ characters |
 | `ORIGIN` | yes (behind a proxy) | Public URL, e.g. `https://invites.blacklocks.uk`. Needed for SvelteKit's form CSRF check |
 | `DB_PATH` | no | Defaults to `/data/invites.db` in the image |
+| `INVITES_API_TOKEN` | no | Enables the JSON API at `/api/v1` (bearer token, 24+ characters, e.g. `openssl rand -hex 32`). Unset = API returns 404 |
+| `INVITES_API_PERSON` | no | Name the API acts as (default `Stephen`); created on first use |
 | `SESSION_SECRET` | no | Otherwise generated once and stored in the database |
 | `TZ` | no | `Europe/London` in the image; decides what "today" means |
 
@@ -81,3 +83,18 @@ Notes:
 - Per-friend invite links instead of a shared password (real identity, revocable)
 - Notifications via the self-hosted ntfy server
 - Calendar (.ics) export, map pins for locations
+
+## API (for an MCP gateway or scripts)
+
+Set `INVITES_API_TOKEN` to enable it. Send `Authorization: Bearer <token>`. The OpenAPI spec is public at
+`/api/v1/openapi.json`.
+
+| Operation | Request |
+|---|---|
+| `list_events` | `GET /api/v1/events?scope=upcoming\|past\|all&q=text` |
+| `get_event` | `GET /api/v1/events/{id}` (adds date poll and comments) |
+| `create_event` | `POST /api/v1/events` JSON `title`, `start_date` (+ `description`, `location`, `tags[]`, `end_date`, `chat_link`). 409 on same title + start date |
+| `update_event` | `PATCH /api/v1/events/{id}` (only events the API person created) |
+| `my_plans` | `GET /api/v1/plans` |
+
+It cannot swipe, join, comment or delete. Failed token attempts share the login rate limiter (5 per IP per 15 minutes).

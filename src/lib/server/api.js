@@ -1,0 +1,94 @@
+// Token-authenticated JSON API (/api/v1) for automation, e.g. an MCP gateway.
+// Disabled (404) unless INVITES_API_TOKEN is set. Acts as one fixed person (INVITES_API_PERSON).
+import crypto from 'node:crypto';
+import { clientIp, loginBlocked, recordLoginFailure, clearLoginFailures } from './auth.js';
+import { createPerson, findPersonByName, getPerson, listComments, listOptions } from './db.js';
+import { validateEvent } from '../validate.js';
+
+const MIN_TOKEN_LENGTH = 24;
+const token = () => (process.env.INVITES_API_TOKEN ?? '').trim();
+export const apiEnabled = () => token().length >= MIN_TOKEN_LENGTH;
+const personName = () => (process.env.INVITES_API_PERSON ?? 'Stephen').trim() || 'Stephen';
+
+const hash = (s) => crypto.createHash('sha256').update(s).digest();
+
+export const json = (body, status = 200) =>
+	Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
+export const apiError = (status, error, details) => json(details ? { error, details } : { error }, status);
+
+/** Returns a Response to short-circuit with, or { person } when the bearer token is valid. */
+export function authenticate(event) {
+	if (!apiEnabled()) return { response: apiError(404, 'API is not enabled') };
+	const ip = 'api:' + clientIp(event);
+	if (loginBlocked(ip)) return { response: apiError(429, 'Too many failed attempts, try later') };
+	const m = /^Bearer\s+(.+)$/i.exec(event.request.headers.get('authorization') ?? '');
+	if (!m || !crypto.timingSafeEqual(hash(m[1].trim()), hash(token()))) {
+		recordLoginFailure(ip);
+		return { response: apiError(401, 'Missing or invalid bearer token') };
+	}
+	clearLoginFailures(ip);
+	const name = personName();
+	const person = findPersonByName(name) ?? getPerson(createPerson(name));
+	return { person };
+}
+
+const origin = (url) => (process.env.ORIGIN || url.origin).replace(/\/$/, '');
+
+export function shapeEvent(e, url) {
+	return {
+		id: e.id,
+		title: e.title,
+		description: e.description,
+		location: e.location,
+		tags: e.tags,
+		start_date: e.start_date,
+		end_date: e.end_date,
+		chat_link: e.chat_link,
+		created_by: e.creator_name,
+		interested: e.interested.map((p) => p.name),
+		interested_count: e.interested.length,
+		url: `${origin(url)}/events/${e.id}`
+	};
+}
+
+export function shapeDetail(e, url, personId) {
+	return {
+		...shapeEvent(e, url),
+		date_options: listOptions(e.id, personId).map((o) => ({ date: o.date, voters: o.voters })),
+		comments: listComments(e.id).map((c) => ({ by: c.name, body: c.body, at: c.created_at }))
+	};
+}
+
+/**
+ * Turn a JSON body into the FormData validateEvent expects. Missing keys fall back to `base`.
+ * Unknown/mistyped fields produce an error list instead of being silently dropped.
+ */
+export function bodyToForm(body, base = {}) {
+	const errors = {};
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return { errors: { body: 'Expected a JSON object' } };
+	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link'];
+	for (const k of Object.keys(body)) if (!allowed.includes(k)) errors[k] = 'Unknown field';
+	const fd = new FormData();
+	for (const k of allowed) {
+		let v = k in body ? body[k] : base[k];
+		if (v === null || v === undefined) v = '';
+		if (k === 'tags' && Array.isArray(v)) {
+			if (!v.every((t) => typeof t === 'string')) errors.tags = 'Tags must be strings';
+			v = v.join(',');
+		}
+		if (typeof v !== 'string') {
+			errors[k] = 'Must be a string';
+			v = '';
+		}
+		fd.set(k, v);
+	}
+	return { fd, errors };
+}
+
+export function validateBody(body, { base, today, requireFuture }) {
+	const { fd, errors: shape } = bodyToForm(body, base);
+	if (!fd) return { ok: false, errors: shape };
+	const r = validateEvent(fd, { today, requireFuture });
+	const errors = { ...shape, ...r.errors };
+	return { ok: Object.keys(errors).length === 0, errors, values: r.values };
+}

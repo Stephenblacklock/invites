@@ -179,6 +179,40 @@ export function deleteEvent(id) {
 	db().prepare('DELETE FROM event WHERE id = ?').run(id);
 }
 
+/** Events for the API: scope upcoming (default) | past | all, optional text filter. */
+export function listEvents({ scope = 'upcoming', q = '', today, limit = 100 }) {
+	const where = [];
+	const args = [];
+	if (scope === 'upcoming') {
+		where.push('COALESCE(e.end_date, e.start_date) >= ?');
+		args.push(today);
+	} else if (scope === 'past') {
+		where.push('COALESCE(e.end_date, e.start_date) < ?');
+		args.push(today);
+	}
+	if (q) {
+		const like = `%${q.replace(/[%_\\]/g, (c) => '\\' + c)}%`;
+		where.push("(e.title LIKE ? ESCAPE '\\' OR e.description LIKE ? ESCAPE '\\' OR e.location LIKE ? ESCAPE '\\' OR e.tags LIKE ? ESCAPE '\\')");
+		args.push(like, like, like, like);
+	}
+	const rows = db()
+		.prepare(
+			`SELECT e.*, p.name AS creator_name FROM event e JOIN person p ON p.id = e.created_by
+			 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+			 ORDER BY e.start_date, e.id LIMIT ?`
+		)
+		.all(...args, limit);
+	return hydrate(rows);
+}
+
+export function findDuplicateEvent(title, startDate) {
+	return (
+		db()
+			.prepare('SELECT id FROM event WHERE title = ? COLLATE NOCASE AND start_date = ?')
+			.get(title, startDate)?.id ?? null
+	);
+}
+
 /** Events this person hasn't swiped on yet that haven't finished. */
 export function deckFor(personId, today) {
 	const rows = db()
