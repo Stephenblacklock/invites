@@ -1,0 +1,22 @@
+# Reference compose file. On Unraid you'd normally create the container from the Docker tab
+# (see README) rather than running this, but the values are the same.
+services:
+  invites:
+    image: ghcr.io/OWNER/invites:latest   # replace OWNER with your GitHub username (lowercase)
+    container_name: Invites
+    restart: unless-stopped
+    user: '99:100'                        # Unraid nobody:users, so the bind mount is writable
+    environment:
+      INVITES_PASSWORD: ${INVITES_PASSWORD:?set a password}
+      ORIGIN: https://invites.blacklocks.uk
+      TZ: Europe/London
+    volumes:
+      - /mnt/user/appdata/invites:/data
+    networks:
+      - stephenproxy
+    # No published port is needed: NPM reaches it as invites:3000 over the stephenproxy network.
+    # For LAN testing add, e.g.:  ports: ['8108:3000']   (check the port is free first)
+
+networks:
+  stephenproxy:
+    external: true
