@@ -80,6 +80,17 @@ export function GET({ url }) {
 					responses: { 200: ok({ type: 'object', properties: { event: event } }), 400: err, 401: err, 403: err, 404: err }
 				}
 			},
+			'/api/v1/link-preview': {
+				get: {
+					operationId: 'preview_link',
+					summary: 'Read a public https event or ticket page and suggest event fields (title, description, location, start_date, end_date, image_url). Nothing is saved. Suggestions can be wrong or incomplete, especially dates, so check them before create_event. Some ticket sites block this and return an error.',
+					parameters: [{ name: 'url', in: 'query', required: true, description: 'Full https link to the event page', schema: { type: 'string' } }],
+					responses: {
+						200: ok({ type: 'object', properties: { source: { type: 'string' }, suggestion: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, location: { type: 'string' }, start_date: { type: 'string' }, end_date: { type: 'string' }, image_url: { type: 'string' } } }, note: { type: 'string' } } }),
+						400: err, 401: err, 422: err, 429: err
+					}
+				}
+			},
 			'/api/v1/plans': {
 				get: {
 					operationId: 'my_plans',

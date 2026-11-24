@@ -1,19 +1,8 @@
 import { json } from '@sveltejs/kit';
-import { previewLink } from '#lib/server/linkinfo.js';
-
-// Small per-person limit so a signed-in friend can't turn this into a page-fetching proxy.
-const hits = new Map();
-function allowed(personId) {
-	const now = Date.now();
-	const recent = (hits.get(personId) ?? []).filter((t) => now - t < 60_000);
-	if (recent.length >= 12) return false;
-	recent.push(now);
-	hits.set(personId, recent);
-	return true;
-}
+import { previewAllowed, previewLink } from '#lib/server/linkinfo.js';
 
 export async function POST({ request, locals }) {
-	if (!allowed(locals.person.id)) return json({ error: 'Slow down a little and try again in a minute.' }, { status: 429 });
+	if (!previewAllowed(locals.person.id)) return json({ error: 'Slow down a little and try again in a minute.' }, { status: 429 });
 	let url = '';
 	try {
 		url = String((await request.json())?.url ?? '').trim();

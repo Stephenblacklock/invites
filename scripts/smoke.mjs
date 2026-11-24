@@ -366,6 +366,18 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok(limited, 'prefill is rate limited per person');
 }
 
+// API link preview
+{
+	const noAuth = await fetch(BASE + '/api/v1/link-preview?url=https://example.com');
+	ok(noAuth.status === 401, 'API link-preview needs the token');
+	const r1 = await call('/api/v1/link-preview?url=' + encodeURIComponent('https://10.0.0.5/x'));
+	ok(r1.status === 422, 'API link-preview refuses private addresses');
+	const r2 = await call('/api/v1/link-preview');
+	ok(r2.status === 400, 'API link-preview needs a url');
+	const spec = await (await fetch(BASE + '/api/v1/openapi.json')).json();
+	ok(!!spec.paths['/api/v1/link-preview']?.get?.operationId, 'OpenAPI lists preview_link');
+}
+
 // ------------------------------------------------------------ calendar export
 {
 	const { chosenDate, buildCalendar } = await import('../src/lib/server/ics.js');

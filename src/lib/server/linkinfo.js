@@ -162,3 +162,14 @@ export async function previewLink(raw) {
 	if (!info.title) return { error: "Couldn't find any event details on that page." };
 	return { info, source: new URL(r.url).hostname.replace(/^www\./, '') };
 }
+
+// Small per-person limit so a signed-in friend (or the API token) can't turn this into a page-fetching proxy.
+const hits = new Map();
+export function previewAllowed(key) {
+	const now = Date.now();
+	const recent = (hits.get(key) ?? []).filter((t) => now - t < 60_000);
+	if (recent.length >= 12) return false;
+	recent.push(now);
+	hits.set(key, recent);
+	return true;
+}
