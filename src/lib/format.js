@@ -74,6 +74,9 @@ export function flags(ev, today) {
 	const out = [];
 	const price = priceLabel(ev);
 	if (price) out.push({ text: price, price: true });
+	if (ev.travel?.length) {
+		out.push({ text: ev.travel.map((t) => `${t.kind === 'home' ? 'Home' : 'Work'} ${t.minutes} min`).join(' · '), travel: true });
+	}
 	if (ev.decide_by && ev.decide_by >= today) {
 		const n = dayDiff(today, ev.decide_by);
 		out.push({

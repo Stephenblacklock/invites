@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { bg, countdown, fmtDate, fmtRange, hue, isRange, priceLabel } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
+	import { onMount } from 'svelte';
 	import MediaEmbed from '#lib/components/MediaEmbed.svelte';
 
 	let { data, form } = $props();
@@ -10,6 +11,18 @@
 	const finished = $derived((ev.end_date || ev.start_date) < data.today);
 	const best = $derived(Math.max(0, ...data.options.map((o) => o.voters.length)));
 	const err = (where) => (form?.where === where ? form.error : null);
+
+	let trip = $state({ loading: true, hasStations: true, rows: [] });
+	onMount(async () => {
+		if (!ev.location) return (trip = { loading: false, hasStations: true, rows: [] });
+		try {
+			const res = await fetch(`/events/${ev.id}/travel`);
+			const d = await res.json();
+			trip = { loading: false, hasStations: d.hasStations, rows: d.rows ?? [] };
+		} catch {
+			trip = { loading: false, hasStations: true, rows: [] };
+		}
+	});
 </script>
 
 <svelte:head><title>Invites · {ev.title}</title></svelte:head>
@@ -66,6 +79,26 @@
 	{/if}
 	<p class="center-link"><a href="/events/{ev.id}/calendar.ics">Add to calendar</a></p>
 </section>
+
+{#if ev.location}
+	<section class="panel">
+		<h2>Getting there</h2>
+		{#if trip.loading}
+			<p class="muted">Working out journey times…</p>
+		{:else if !trip.hasStations}
+			<p class="muted">Add your home or work station to see how long it takes. <a href="/stations">Set your stations</a></p>
+		{:else if trip.rows.length}
+			<ul class="trip">
+				{#each trip.rows as r (r.kind)}
+					<li><strong>{r.minutes} min</strong> from {r.station} <span class="muted small">({r.kind}) · {r.summary}</span></li>
+				{/each}
+			</ul>
+			<p class="hint">A typical evening journey, departing 18:30. Powered by TfL Open Data.</p>
+		{:else}
+			<p class="muted">Couldn't work out a journey time for this one (it may be outside London).</p>
+		{/if}
+	</section>
+{/if}
 
 {#if ev.media_link}<MediaEmbed link={ev.media_link} />{/if}
 

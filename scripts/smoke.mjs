@@ -1,6 +1,9 @@
 // End-to-end smoke test against a running server.
 //   INVITES_PASSWORD=... ORIGIN=http://localhost:3100 PORT=3100 node build &
 //   BASE=http://localhost:3100 INVITES_PASSWORD=... node scripts/smoke.mjs
+// Travel-time checks use a fake TfL/geocoder on :3199. Start the server with
+//   TFL_BASE=http://127.0.0.1:3199 GEOCODE_BASE=http://127.0.0.1:3199
+// and run this script with TRAVEL_TESTS=1 (without it those checks are skipped).
 const BASE = process.env.BASE ?? 'http://localhost:3100';
 const PASSWORD = process.env.INVITES_PASSWORD ?? 'test-password-123';
 
@@ -545,6 +548,100 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	const clear = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: null, price_max: null } });
 	const cleared = (await clear.json()).event;
 	ok(clear.status === 200 && cleared.price_min === null && cleared.price_max === null, 'API can clear the price with null');
+}
+
+// ------------------------------------------------------------ travel times (fake TfL + geocoder)
+if (process.env.TRAVEL_TESTS !== '1') {
+	console.log('SKIP  travel-time checks (set TRAVEL_TESTS=1 and start the server with TFL_BASE/GEOCODE_BASE)');
+} else {
+	const http = await import('node:http');
+	const calls = { search: 0, journey: 0, geocode: 0 };
+	const fake = http.createServer((req, res) => {
+		const u = new URL(req.url, 'http://x');
+		const send = (o) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(o)); };
+		if (u.pathname === '/StopPoint/Search') {
+			calls.search++;
+			return send({ matches: [
+				{ id: '940GZZLUBWR', name: 'Bow Road Underground Station', modes: ['tube'] },
+				{ id: 'HUBBOW', name: 'Bow Road Underground Station', modes: ['tube'] },
+				{ id: '940GZZLUBBB', name: 'Bow Church DLR Station', modes: ['dlr'] },
+				{ id: '../evil', name: 'Bad id', modes: [] }
+			] });
+		}
+		if (u.pathname.startsWith('/Journey/JourneyResults/')) {
+			calls.journey++;
+			const from = decodeURIComponent(u.pathname.split('/')[3]);
+			if (from === 'BROKEN') { res.statusCode = 500; return res.end('no'); }
+			const mins = from === 'HUBBOW' ? 25 : 40;
+			return send({ journeys: [
+				{ duration: mins + 6, legs: [{ mode: { id: 'bus' }, routeOptions: [{ name: '8' }] }] },
+				{ duration: mins, legs: [{ mode: { id: 'walking' } }, { mode: { id: 'tube' }, routeOptions: [{ name: 'District' }] }, { mode: { id: 'tube' }, routeOptions: [{ name: 'District' }] }, { mode: { id: 'tube' }, routeOptions: [{ name: 'Central' }] }] }
+			] });
+		}
+		if (u.pathname === '/search') {
+			calls.geocode++;
+			return send(/apollo/i.test(u.searchParams.get('q') ?? '') ? [{ lat: '51.4906', lon: '-0.2243' }] : []);
+		}
+		res.statusCode = 404; res.end();
+	});
+	await new Promise((r) => fake.listen(3199, '127.0.0.1', r));
+
+	const anon = new Client('10.0.4.1');
+	ok((await anon.req('/stations')).status === 303, 'stations page needs a login');
+	ok((await anon.req('/stations/search?q=bow')).status === 303, 'station search needs a login');
+
+	const search = await alice.req('/stations/search?q=bow', { headers: { accept: 'application/json' } });
+	const found = (await search.json()).stations;
+	ok(search.status === 200 && found.length === 2 && found[0].id === 'HUBBOW', 'station search dedupes by name, prefers the interchange id, drops bad ids');
+	ok((await (await alice.req('/stations/search?q=b')).json()).stations.length === 0, 'station search needs at least 2 letters');
+
+	const bobT = new Client('10.0.4.2');
+	await bobT.post('/login', { password: PASSWORD });
+	await bobT.post('/who?/create', { name: 'Travel Bob' });
+
+	ok((await alice.post('/stations?/save', { kind: 'home', id: '../x', name: 'Nope' })).status === 400, 'saving a station with a bad id is refused');
+	ok((await alice.post('/stations?/save', { kind: 'club', id: 'HUBBOW', name: 'Nope' })).status === 400, 'saving a station with a bad kind is refused');
+	await alice.post('/stations?/save', { kind: 'home', id: 'HUBBOW', name: 'Bow Road' });
+	ok((await (await alice.req('/stations')).text()).includes('Bow Road'), 'home station is saved and shown');
+
+	const made = await alice.post('/events/new', { title: 'Gig at the Apollo', location: 'Eventim Apollo, London', start_date: addDays(10) });
+	const gigPath = loc(made);
+	const gigId = gigPath.split('/').pop();
+	const t1 = await (await alice.req(`/events/${gigId}/travel`)).json();
+	ok(t1.rows.length === 1 && t1.rows[0].minutes === 25 && t1.rows[0].station === 'Bow Road' && t1.rows[0].summary === 'District → Central', 'journey time uses the fastest option and a tidy line summary');
+	const before = { ...calls };
+	const t2 = await (await alice.req(`/events/${gigId}/travel`)).json();
+	ok(t2.rows[0].minutes === 25 && calls.journey === before.journey && calls.geocode === before.geocode, 'second request is served from cache (no TfL or geocoder calls)');
+
+	await alice.post('/stations?/save', { kind: 'work', id: 'HUBLIV', name: 'Liverpool Street' });
+	const t3 = await (await alice.req(`/events/${gigId}/travel`)).json();
+	ok(t3.rows.length === 2 && t3.rows.some((r) => r.kind === 'work' && r.minutes === 40), 'work station adds a second journey time');
+	ok(calls.geocode === before.geocode, 'the venue is only geocoded once');
+
+	ok((await (await alice.req('/plans')).text()).includes('Home 25 min'), 'plans list shows the cached journey time');
+	const deck = await (await bobT.req(`/events/${gigId}`)).text();
+	ok(!deck.includes('Bow Road') && !deck.includes('25 min'), "other people can't see someone's station or times");
+	const bt = await (await bobT.req(`/events/${gigId}/travel`)).json();
+	ok(bt.hasStations === false && bt.rows.length === 0, 'someone with no stations gets no times (and is nudged to set them)');
+
+	const nowhere = await alice.post('/events/new', { title: 'Mystery', location: 'Nowhere Special', start_date: addDays(11) });
+	const nw = await (await alice.req(`/events/${loc(nowhere).split('/').pop()}/travel`)).json();
+	ok(nw.rows.length === 0, 'an unknown or non-London venue gets no journey time');
+	const calls2 = calls.geocode;
+	await alice.req(`/events/${loc(nowhere).split('/').pop()}/travel`);
+	ok(calls.geocode === calls2, 'a venue that could not be found is not looked up again');
+
+	await alice.post('/stations?/save', { kind: 'work', id: 'BROKEN', name: 'Broken' });
+	const broken = await (await alice.req(`/events/${gigId}/travel`)).json();
+	ok(broken.rows.length === 1 && broken.rows[0].kind === 'home', 'a TfL failure for one station does not break the others');
+	await alice.post('/stations?/clear', { kind: 'work' });
+	ok(!(await (await alice.req('/stations')).text()).includes('Liverpool Street'), 'a station can be removed');
+
+	const { travelDate } = await import('../src/lib/server/travel.js');
+	ok(travelDate({ start_date: addDays(5) }, addDays(0)) === addDays(5), 'travel date: soon events use their own day');
+	ok(new Date(travelDate({ start_date: addDays(90) }, addDays(0)) + 'T00:00:00Z').getUTCDay() === 2, 'travel date: far-off events use a typical Tuesday');
+	ok(travelDate({ start_date: addDays(-3) }, addDays(0)) === addDays(1), 'travel date: events already started use tomorrow');
+	fake.close();
 }
 
 // Creator deletes

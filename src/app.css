@@ -260,3 +260,10 @@ input[type='date'] { min-height: 2.9rem; }
 .flag.good { background: #dff5e3; color: #1a7a34; }
 .media iframe { width: 100%; border: 0; border-radius: 12px; aspect-ratio: 16 / 9; }
 .media iframe.spotify { aspect-ratio: auto; }
+
+/* ---------- stations & travel ---------- */
+.station-picker { border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem 0.9rem 0.9rem; margin: 0 0 1rem; min-width: 0; }
+.station-picker legend { padding: 0 0.4rem; font-weight: 600; }
+.station-results { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.station-results .btn { width: 100%; text-align: left; }
+.trip { list-style: none; padding: 0; margin: 0 0 0.4rem; display: flex; flex-direction: column; gap: 0.35rem; }

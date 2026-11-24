@@ -53,3 +53,9 @@
 		<button class="btn ghost">Make a new link</button>
 	</form>
 </section>
+
+<section class="panel">
+	<h2>Travel times</h2>
+	<p class="muted">Set a home or work station and events show how long it takes to get there.</p>
+	<p><a class="btn" href="/stations">Your stations</a></p>
+</section>

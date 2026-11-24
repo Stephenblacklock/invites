@@ -73,7 +73,21 @@ const MIGRATIONS = [
 	ALTER TABLE event ADD COLUMN booking_note TEXT;`,
 	// v5: price per person in pence (price_max only for a range)
 	`ALTER TABLE event ADD COLUMN price_min INTEGER;
-	ALTER TABLE event ADD COLUMN price_max INTEGER;`
+	ALTER TABLE event ADD COLUMN price_max INTEGER;`,
+	// v6: private home/work stations per person, geocoded venue, cached journey times
+	`ALTER TABLE person ADD COLUMN home_station_id TEXT;
+	ALTER TABLE person ADD COLUMN home_station_name TEXT;
+	ALTER TABLE person ADD COLUMN work_station_id TEXT;
+	ALTER TABLE person ADD COLUMN work_station_name TEXT;
+	ALTER TABLE event ADD COLUMN geo_for TEXT;
+	ALTER TABLE event ADD COLUMN geo_lat REAL;
+	ALTER TABLE event ADD COLUMN geo_lon REAL;
+	CREATE TABLE travel_cache (
+		key TEXT PRIMARY KEY,
+		minutes INTEGER NOT NULL,
+		summary TEXT NOT NULL,
+		fetched_at INTEGER NOT NULL
+	);`
 ];
 
 let _db;
@@ -126,6 +140,41 @@ export function createPerson(name) {
 }
 export function findPersonByName(name) {
 	return db().prepare('SELECT id, name FROM person WHERE name = ?').get(name) ?? null;
+}
+
+// ---------------------------------------------------------------- stations & travel (private to each person)
+export function getStations(personId) {
+	const r = db()
+		.prepare('SELECT home_station_id, home_station_name, work_station_id, work_station_name FROM person WHERE id = ?')
+		.get(personId);
+	return {
+		home: r?.home_station_id ? { id: r.home_station_id, name: r.home_station_name } : null,
+		work: r?.work_station_id ? { id: r.work_station_id, name: r.work_station_name } : null
+	};
+}
+export function setStation(personId, kind, id, name) {
+	const sql =
+		kind === 'home'
+			? 'UPDATE person SET home_station_id = ?, home_station_name = ? WHERE id = ?'
+			: 'UPDATE person SET work_station_id = ?, work_station_name = ? WHERE id = ?';
+	db().prepare(sql).run(id, name, personId);
+}
+export function setGeo(eventId, text, lat, lon) {
+	db().prepare('UPDATE event SET geo_for = ?, geo_lat = ?, geo_lon = ? WHERE id = ?').run(text, lat, lon, eventId);
+}
+export function getTravel(key, maxAgeMs) {
+	const r = db().prepare('SELECT minutes, summary, fetched_at FROM travel_cache WHERE key = ?').get(key);
+	return r && Date.now() - r.fetched_at <= maxAgeMs ? { minutes: r.minutes, summary: r.summary } : null;
+}
+export function putTravel(key, minutes, summary) {
+	db()
+		.prepare(
+			`INSERT INTO travel_cache (key, minutes, summary, fetched_at) VALUES (?, ?, ?, ?)
+			 ON CONFLICT(key) DO UPDATE SET minutes = excluded.minutes, summary = excluded.summary, fetched_at = excluded.fetched_at`
+		)
+		.run(key, minutes, summary, Date.now());
+	// keep the cache from growing forever
+	db().prepare('DELETE FROM travel_cache WHERE fetched_at < ?').run(Date.now() - 30 * 86_400_000);
 }
 
 // ---------------------------------------------------------------- calendar feed token

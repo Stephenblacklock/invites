@@ -98,3 +98,11 @@ Set `INVITES_API_TOKEN` to enable it. Send `Authorization: Bearer <token>`. The 
 | `my_plans` | `GET /api/v1/plans` |
 
 It cannot swipe, join, comment or delete. Failed token attempts share the login rate limiter (5 per IP per 15 minutes).
+
+## Travel times (optional)
+
+People can set a private home and/or work station on `/stations`; events with a London location then show a typical evening (18:30) journey time on the swipe card, Plans and the event page.
+
+- Journeys: TfL Journey Planner. Works anonymously (rate limited); set `TFL_APP_KEY` (free from api-portal.tfl.gov.uk) for higher limits.
+- Venue coordinates: OpenStreetMap Nominatim (1 request/second, Greater London only). Results are cached on the event and in the database (3 days for journeys).
+- If either service is unreachable the time is simply not shown. `TFL_BASE` / `GEOCODE_BASE` can point at other servers (the smoke tests use a fake one).

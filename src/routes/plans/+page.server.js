@@ -1,9 +1,14 @@
 import { eventsByDecision, getCalToken, resetCalToken, todayISO } from '#lib/server/db.js';
+import { warm, withTravel } from '#lib/server/travel.js';
 
 export function load({ locals, url }) {
 	const today = todayISO();
 	const all = eventsByDecision(locals.person.id, 'interested');
-	const upcoming = all.filter((e) => (e.end_date || e.start_date) >= today);
+	const upcoming = withTravel(
+		locals.person.id,
+		all.filter((e) => (e.end_date || e.start_date) >= today)
+	);
+	warm(locals.person.id, upcoming);
 	const past = all
 		.filter((e) => (e.end_date || e.start_date) < today)
 		.reverse()
