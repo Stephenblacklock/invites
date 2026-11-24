@@ -87,7 +87,9 @@ const MIGRATIONS = [
 		minutes INTEGER NOT NULL,
 		summary TEXT NOT NULL,
 		fetched_at INTEGER NOT NULL
-	);`
+	);`,
+	// v7: how keen someone is (1 curious, 2 keen, 3 can't wait)
+	`ALTER TABLE swipe ADD COLUMN interest INTEGER NOT NULL DEFAULT 2 CHECK (interest BETWEEN 1 AND 3);`
 ];
 
 let _db;
@@ -201,14 +203,14 @@ function hydrate(rows) {
 	const marks = ids.map(() => '?').join(',');
 	const people = db()
 		.prepare(
-			`SELECT s.event_id, p.id, p.name FROM swipe s JOIN person p ON p.id = s.person_id
+			`SELECT s.event_id, p.id, p.name, s.interest FROM swipe s JOIN person p ON p.id = s.person_id
 			 WHERE s.decision = 'interested' AND s.event_id IN (${marks}) ORDER BY s.created_at, p.id`
 		)
 		.all(...ids);
 	const byEvent = new Map();
 	for (const p of people) {
 		if (!byEvent.has(p.event_id)) byEvent.set(p.event_id, []);
-		byEvent.get(p.event_id).push({ id: p.id, name: p.name });
+		byEvent.get(p.event_id).push({ id: p.id, name: p.name, interest: p.interest });
 	}
 	const bookerIds = [...new Set(rows.map((r) => r.booker_id).filter(Boolean))];
 	const bookers = new Map();
@@ -355,13 +357,16 @@ export function eventsByDecision(personId, decision) {
 }
 
 // ---------------------------------------------------------------- swipes
-export function setSwipe(personId, eventId, decision) {
+/** interest (1-3) is only used for 'interested'; left null it keeps the earlier level (default 2). */
+export function setSwipe(personId, eventId, decision, interest = null) {
+	const level = Number.isInteger(interest) && interest >= 1 && interest <= 3 ? interest : null;
 	db()
 		.prepare(
-			`INSERT INTO swipe (person_id, event_id, decision) VALUES (?, ?, ?)
-			 ON CONFLICT(person_id, event_id) DO UPDATE SET decision = excluded.decision, created_at = datetime('now')`
+			`INSERT INTO swipe (person_id, event_id, decision, interest) VALUES (?, ?, ?, ?)
+			 ON CONFLICT(person_id, event_id) DO UPDATE SET decision = excluded.decision, created_at = datetime('now'),
+			   interest = CASE WHEN ? IS NULL THEN swipe.interest ELSE excluded.interest END`
 		)
-		.run(personId, eventId, decision);
+		.run(personId, eventId, decision, level ?? 2, level);
 	if (decision !== 'interested') {
 		// leaving the group hands back any ticket booking they had taken on
 		db()
@@ -378,6 +383,12 @@ export function setSwipe(personId, eventId, decision) {
 
 export function clearSwipe(personId, eventId) {
 	db().prepare('DELETE FROM swipe WHERE person_id = ? AND event_id = ?').run(personId, eventId);
+}
+
+export function setInterest(personId, eventId, interest) {
+	db()
+		.prepare(`UPDATE swipe SET interest = ? WHERE person_id = ? AND event_id = ? AND decision = 'interested'`)
+		.run(interest, personId, eventId);
 }
 
 export function getSwipe(personId, eventId) {

@@ -1,6 +1,6 @@
-import { clearSwipe, getEvent, setSwipe } from '#lib/server/db.js';
+import { clearSwipe, getEvent, setSwipe, setInterest } from '#lib/server/db.js';
 
-const DECISIONS = new Set(['interested', 'not_interested', 'undo']);
+const DECISIONS = new Set(['interested', 'not_interested', 'undo', 'interest']);
 
 export async function POST({ request, locals }) {
 	let body;
@@ -15,7 +15,16 @@ export async function POST({ request, locals }) {
 		return Response.json({ error: 'Bad request' }, { status: 400 });
 	if (!getEvent(eventId)) return Response.json({ error: 'No such event' }, { status: 404 });
 
+	const level = body?.interest == null ? null : Number(body.interest);
+	if (level !== null && !(Number.isInteger(level) && level >= 1 && level <= 3))
+		return Response.json({ error: 'interest must be 1, 2 or 3' }, { status: 400 });
+	if (decision === 'interest') {
+		if (level === null) return Response.json({ error: 'interest required' }, { status: 400 });
+		setInterest(locals.person.id, eventId, level);
+		return Response.json({ ok: true });
+	}
+
 	if (decision === 'undo') clearSwipe(locals.person.id, eventId);
-	else setSwipe(locals.person.id, eventId, decision);
+	else setSwipe(locals.person.id, eventId, decision, decision === 'interested' ? level : null);
 	return Response.json({ ok: true });
 }
