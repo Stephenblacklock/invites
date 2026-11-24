@@ -60,3 +60,18 @@ export function namesLabel(names, max = 3) {
 export function bg(image) {
 	return image ? `linear-gradient(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.58)), url(/img/${image})` : undefined;
 }
+
+/** Small status flags shown on cards and rows: decide-by date and ticket booking. */
+export function flags(ev, today) {
+	const out = [];
+	if (ev.decide_by && ev.decide_by >= today) {
+		const n = dayDiff(today, ev.decide_by);
+		out.push({
+			text: n === 0 ? 'Decide today' : n === 1 ? 'Decide by tomorrow' : `Decide by ${fmtDate(ev.decide_by, today)}`,
+			urgent: n <= 3
+		});
+	}
+	if (ev.booking_status === 'booked') out.push({ text: 'Booked ✓', good: true });
+	else if (ev.booking_status === 'booking' && ev.booker_name) out.push({ text: `${ev.booker_name} is booking` });
+	return out;
+}

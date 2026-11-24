@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { bg, countdown, fmtRange, hue } from '#lib/format.js';
+	import { bg, countdown, flags, fmtRange, hue } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 
 	let { data } = $props();
@@ -165,6 +165,9 @@
 				<div class="card-body">
 					<h2>{top.title}</h2>
 					{#if top.location}<p class="loc">{top.location}</p>{/if}
+					{#if flags(top, data.today).length}
+						<p class="flags">{#each flags(top, data.today) as f (f.text)}<span class="flag" class:urgent={f.urgent} class:good={f.good}>{f.text}</span>{/each}</p>
+					{/if}
 					{#if top.description}<p class="desc clamp">{top.description}</p>{/if}
 					{#if top.tags.length}
 						<p class="tags">{#each top.tags as t (t)}<span class="tag">{t}</span>{/each}</p>

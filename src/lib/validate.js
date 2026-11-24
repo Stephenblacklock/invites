@@ -1,4 +1,5 @@
 // Pure validation for event form input. Used on the server; safe to import anywhere.
+import { parseMedia } from './media.js';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isValidDate(s) {
@@ -44,6 +45,8 @@ export function validateEvent(fd, { today, requireFuture }) {
 	const start = get('start_date');
 	const end = get('end_date');
 	const link = cleanLink(get('chat_link'));
+	const decideBy = get('decide_by');
+	const media = get('media_link');
 
 	if (!title) errors.title = 'Give it a title';
 	else if (title.length > 80) errors.title = 'Keep the title under 80 characters';
@@ -55,6 +58,12 @@ export function validateEvent(fd, { today, requireFuture }) {
 		errors.end_date = 'End date is before the start date';
 	if (!errors.start_date && !errors.end_date && requireFuture && (end || start) < today)
 		errors.start_date = 'That event has already finished';
+	if (decideBy) {
+		if (!isValidDate(decideBy)) errors.decide_by = 'That date is not valid';
+		else if (!errors.start_date && !errors.end_date && decideBy > (end || start)) errors.decide_by = 'Pick a date before the event ends';
+		else if (requireFuture && decideBy < today) errors.decide_by = 'That date has already passed';
+	}
+	if (media && !parseMedia(media)) errors.media_link = 'Use a YouTube or Spotify link';
 	if (!link.ok) errors.chat_link = 'Enter a full http(s) link, e.g. a WhatsApp invite';
 
 	const values = {
@@ -64,7 +73,9 @@ export function validateEvent(fd, { today, requireFuture }) {
 		tags: parseTags(get('tags')),
 		start_date: start,
 		end_date: end && end !== start ? end : null,
-		chat_link: link.ok ? link.value : null
+		chat_link: link.ok ? link.value : null,
+		decide_by: decideBy || null,
+		media_link: media ? (parseMedia(media)?.link ?? null) : null
 	};
 	return { ok: Object.keys(errors).length === 0, errors, values };
 }

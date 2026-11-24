@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { bg, countdown, fmtDate, fmtRange, hue, isRange } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
+	import MediaEmbed from '#lib/components/MediaEmbed.svelte';
 
 	let { data, form } = $props();
 	const ev = $derived(data.event);
@@ -24,6 +25,9 @@
 <section class="panel">
 	{#if ev.location}
 		<p class="meta"><span class="k">Where</span> {ev.location}</p>
+	{/if}
+	{#if ev.decide_by && ev.decide_by >= data.today}
+		<p class="meta"><span class="k">Decide by</span> {fmtDate(ev.decide_by, data.today)}</p>
 	{/if}
 	{#if ev.description}<p class="desc">{ev.description}</p>{/if}
 	{#if ev.tags.length}
@@ -59,6 +63,40 @@
 	{/if}
 	<p class="center-link"><a href="/events/{ev.id}/calendar.ics">Add to calendar</a></p>
 </section>
+
+{#if ev.media_link}<MediaEmbed link={ev.media_link} />{/if}
+
+{#if member || ev.booking_status}
+	<section class="panel">
+		<h2>Tickets</h2>
+		{#if !ev.booking_status}
+			<p class="muted">Nobody's sorting tickets yet.</p>
+			{#if member && !finished}
+				<form method="POST" action="?/claimBooking" use:enhance>
+					<button class="btn primary">I'll book</button>
+				</form>
+			{/if}
+		{:else if ev.booker_id === data.me}
+			<p>{ev.booking_status === 'booked' ? "You've booked it." : "You're sorting the tickets."}</p>
+			<form method="POST" action="?/markBooked" use:enhance class="inline-form">
+				<input name="note" maxlength="120" value={ev.booking_note ?? ''} placeholder="e.g. 4 tickets, £48 each" aria-label="Booking note" />
+				<button class="btn primary">{ev.booking_status === 'booked' ? 'Update' : 'Mark as booked'}</button>
+			</form>
+			<form method="POST" action="?/releaseBooking" use:enhance>
+				<button class="btn ghost">Hand back</button>
+			</form>
+		{:else}
+			<p>{ev.booker_name} {ev.booking_status === 'booked' ? 'has booked ✓' : 'is sorting the tickets.'}</p>
+			{#if ev.booking_note}<p class="muted">{ev.booking_note}</p>{/if}
+			{#if data.canEdit}
+				<form method="POST" action="?/releaseBooking" use:enhance>
+					<button class="btn ghost">Clear this</button>
+				</form>
+			{/if}
+		{/if}
+		{#if err('booking')}<p class="error">{err('booking')}</p>{/if}
+	</section>
+{/if}
 
 {#if member || ev.chat_link}
 	<section class="panel">

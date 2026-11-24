@@ -48,7 +48,9 @@
 
 	// Lets a share link like /events/new?url=https://… fill the form straight away.
 	onMount(() => {
-		const q = new URLSearchParams(location.search).get('url');
+		const p = new URLSearchParams(location.search);
+		// Android share sheets usually put the link inside "text" rather than "url"
+		const q = p.get('url') || /https?:\/\/[^\s]+/.exec(p.get('text') ?? '')?.[0];
 		if (q) {
 			url = q;
 			fill();

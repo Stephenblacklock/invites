@@ -3,7 +3,7 @@ import { COOKIE, passwordConfigured, readSession } from '#lib/server/auth.js';
 import { db, getPerson } from '#lib/server/db.js';
 import { apiError, authenticate } from '#lib/server/api.js';
 
-const PUBLIC_PATHS = new Set(['/login', '/healthz', '/manifest.webmanifest', '/robots.txt']);
+const PUBLIC_PATHS = new Set(['/login', '/healthz', '/manifest.webmanifest', '/robots.txt', '/service-worker.js']);
 const isAsset = (p) => p.startsWith('/_app/') || p.startsWith('/icon');
 
 function withHeaders(res) {

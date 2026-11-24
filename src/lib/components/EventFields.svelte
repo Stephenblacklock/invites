@@ -36,11 +36,22 @@
 		{#if errors.end_date}<small class="error">{errors.end_date}</small>{/if}
 	</label>
 </div>
+<label>
+	<span>Decide by <em>(optional)</em></span>
+	<input type="date" name="decide_by" value={values.decide_by ?? ''} min={allowPast ? undefined : today} />
+	{#if errors.decide_by}<small class="error">{errors.decide_by}</small>{/if}
+</label>
 <p class="hint">If it runs over several days, set an end date and the group can vote on which day to go.</p>
 
 <label>
 	<span>Tags <em>(comma separated)</em></span>
 	<input name="tags" value={tagText} placeholder="festive, outdoors, food" />
+</label>
+
+<label>
+	<span>Trailer or playlist link <em>(optional)</em></span>
+	<input name="media_link" type="url" inputmode="url" value={values.media_link ?? ''} placeholder="YouTube or Spotify link" />
+	{#if errors.media_link}<small class="error">{errors.media_link}</small>{/if}
 </label>
 
 <label>

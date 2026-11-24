@@ -64,7 +64,13 @@ const MIGRATIONS = [
 	`ALTER TABLE event ADD COLUMN image TEXT;`,
 	// v3: secret per-person token for the read-only calendar feed
 	`ALTER TABLE person ADD COLUMN cal_token TEXT;
-	CREATE UNIQUE INDEX person_cal_token ON person (cal_token) WHERE cal_token IS NOT NULL;`
+	CREATE UNIQUE INDEX person_cal_token ON person (cal_token) WHERE cal_token IS NOT NULL;`,
+	// v4: decide-by date, watch/listen link, and who is booking tickets
+	`ALTER TABLE event ADD COLUMN decide_by TEXT;
+	ALTER TABLE event ADD COLUMN media_link TEXT;
+	ALTER TABLE event ADD COLUMN booker_id INTEGER REFERENCES person(id) ON DELETE SET NULL;
+	ALTER TABLE event ADD COLUMN booking_status TEXT;
+	ALTER TABLE event ADD COLUMN booking_note TEXT;`
 ];
 
 let _db;
@@ -152,7 +158,18 @@ function hydrate(rows) {
 		if (!byEvent.has(p.event_id)) byEvent.set(p.event_id, []);
 		byEvent.get(p.event_id).push({ id: p.id, name: p.name });
 	}
-	return rows.map((r) => ({ ...r, tags: splitTags(r.tags), interested: byEvent.get(r.id) ?? [] }));
+	const bookerIds = [...new Set(rows.map((r) => r.booker_id).filter(Boolean))];
+	const bookers = new Map();
+	if (bookerIds.length) {
+		const q = bookerIds.map(() => '?').join(',');
+		for (const b of db().prepare(`SELECT id, name FROM person WHERE id IN (${q})`).all(...bookerIds)) bookers.set(b.id, b.name);
+	}
+	return rows.map((r) => ({
+		...r,
+		tags: splitTags(r.tags),
+		interested: byEvent.get(r.id) ?? [],
+		booker_name: bookers.get(r.booker_id) ?? null
+	}));
 }
 
 export function getEvent(id) {
@@ -169,10 +186,10 @@ export function createEvent(v, personId) {
 	return d.transaction(() => {
 		const info = d
 			.prepare(
-				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, created_by)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, created_by)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, personId);
+			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, personId);
 		const id = Number(info.lastInsertRowid);
 		setSwipe(personId, id, 'interested');
 		return id;
@@ -182,10 +199,11 @@ export function createEvent(v, personId) {
 export function updateEvent(id, v) {
 	db()
 		.prepare(
-			`UPDATE event SET title = ?, description = ?, location = ?, tags = ?, start_date = ?, end_date = ?, chat_link = ?
+			`UPDATE event SET title = ?, description = ?, location = ?, tags = ?, start_date = ?, end_date = ?, chat_link = ?,
+			   decide_by = ?, media_link = ?
 			 WHERE id = ?`
 		)
-		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, id);
+		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, id);
 	// Poll options that now fall outside the event's dates are no longer valid
 	db()
 		.prepare('DELETE FROM date_option WHERE event_id = ? AND (date < ? OR date > ?)')
@@ -198,6 +216,26 @@ export function setImage(id, name) {
 
 export function setChatLink(id, link) {
 	db().prepare('UPDATE event SET chat_link = ? WHERE id = ?').run(link, id);
+}
+
+// ---------------------------------------------------------------- ticket booking
+/** Take on booking if nobody has. @returns {boolean} whether this person now holds it */
+export function claimBooking(eventId, personId) {
+	return (
+		db()
+			.prepare(`UPDATE event SET booker_id = ?, booking_status = 'booking', booking_note = NULL WHERE id = ? AND booker_id IS NULL`)
+			.run(personId, eventId).changes === 1
+	);
+}
+export function markBooked(eventId, personId, note) {
+	return (
+		db()
+			.prepare(`UPDATE event SET booking_status = 'booked', booking_note = ? WHERE id = ? AND booker_id = ?`)
+			.run(note || null, eventId, personId).changes === 1
+	);
+}
+export function releaseBooking(eventId) {
+	db().prepare(`UPDATE event SET booker_id = NULL, booking_status = NULL, booking_note = NULL WHERE id = ?`).run(eventId);
 }
 
 export function deleteEvent(id) {
@@ -245,9 +283,10 @@ export function deckFor(personId, today) {
 			`SELECT e.*, p.name AS creator_name FROM event e JOIN person p ON p.id = e.created_by
 			 WHERE NOT EXISTS (SELECT 1 FROM swipe s WHERE s.event_id = e.id AND s.person_id = ?)
 			   AND COALESCE(e.end_date, e.start_date) >= ?
-			 ORDER BY e.start_date, e.id`
+			 ORDER BY CASE WHEN e.decide_by IS NOT NULL AND e.decide_by >= ? AND e.decide_by <= date(?, '+7 days') THEN 0 ELSE 1 END,
+			          e.start_date, e.id`
 		)
-		.all(personId, today);
+		.all(personId, today, today, today);
 	return hydrate(rows);
 }
 
@@ -272,6 +311,10 @@ export function setSwipe(personId, eventId, decision) {
 		)
 		.run(personId, eventId, decision);
 	if (decision !== 'interested') {
+		// leaving the group hands back any ticket booking they had taken on
+		db()
+			.prepare(`UPDATE event SET booker_id = NULL, booking_status = NULL, booking_note = NULL WHERE id = ? AND booker_id = ?`)
+			.run(eventId, personId);
 		// leaving the group also withdraws any date votes
 		db()
 			.prepare(

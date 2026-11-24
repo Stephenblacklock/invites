@@ -427,6 +427,81 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	await alice.post(evPath2 + '?/delete', {});
 }
 
+// ------------------------------------------------------------ media link, decide-by, ticket booking, share target
+{
+	const { parseMedia } = await import('../src/lib/media.js');
+	ok(parseMedia('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5s')?.embed === 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ', 'media: youtube watch link becomes a no-cookie embed');
+	ok(parseMedia('https://youtu.be/dQw4w9WgXcQ?si=abc')?.link === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'media: youtu.be short link recognised');
+	ok(parseMedia('https://www.youtube.com/playlist?list=PLabcdefghij1234')?.embed.includes('videoseries?list='), 'media: youtube playlist recognised');
+	ok(parseMedia('https://open.spotify.com/intl-gb/track/4uLU6hMCjMI75M1A2tKUQC?si=x')?.embed === 'https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC', 'media: spotify track link recognised');
+	ok(parseMedia('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M')?.height === 352, 'media: spotify playlist gets the tall player');
+	ok(parseMedia('https://evil.example.com/watch?v=dQw4w9WgXcQ') === null && parseMedia('https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ') === null, 'media: look-alike hosts are refused');
+	ok(parseMedia('https://www.youtube.com/watch?v="><script>') === null && parseMedia('javascript:alert(1)') === null, 'media: junk and script links are refused');
+
+	const mk = async (name) => {
+		const c = new Client('10.0.3.' + (10 + Math.floor(Math.random() * 200)));
+		await c.post('/login', { password: PASSWORD });
+		await c.post('/who?/create', { name });
+		return c;
+	};
+	const bob = await mk('Booker Bob');
+
+	const bad = await alice.post('/events/new', { title: 'Bad media', start_date: addDays(20), media_link: 'https://example.com/video' });
+	ok(bad.status === 400, 'form refuses a non-YouTube/Spotify media link');
+	const late = await alice.post('/events/new', { title: 'Bad decide', start_date: addDays(20), decide_by: addDays(25) });
+	ok(late.status === 400, 'form refuses a decide-by date after the event');
+
+	const made = await alice.post('/events/new', { title: 'Film night', start_date: addDays(40), decide_by: addDays(1), media_link: 'https://youtu.be/dQw4w9WgXcQ' });
+	const filmPath = loc(made);
+	ok(made.status === 303 && !!filmPath, 'event with decide-by and trailer is created');
+	let page = await (await alice.req(filmPath)).text();
+	ok(page.includes('Play on YouTube') && page.includes('Decide by'), 'event page shows the trailer button and decide-by date');
+	ok(!page.includes('youtube-nocookie.com'), 'the player is not loaded until tapped');
+
+	// the urgent decide-by event jumps the swipe deck
+	const fresh = await mk('Deck Dana');
+	const home = await (await fresh.req('/')).text();
+	ok(/class="card top[^"]*"[\s\S]*?<h2>Film night<\/h2>/.test(home), 'an event with a near decide-by date is first in the deck');
+	ok(home.includes('Decide by tomorrow'), 'deck card shows the decide-by flag');
+
+	// ticket booking
+	await bob.post(filmPath + '?/join', {});
+	ok((await bob.post(filmPath + '?/claimBooking', {})).status < 400, 'a member can take on booking');
+	page = await (await alice.req(filmPath)).text();
+	ok(page.includes('Booker Bob') && page.includes('sorting the tickets'), "others see who is booking");
+	const dup = await alice.post(filmPath + '?/claimBooking', {});
+	ok(dup.status === 409, 'a second person cannot take the booking');
+	const carol = await mk('Booker Carol');
+	ok((await carol.post(filmPath + '?/claimBooking', {})).status === 403, 'a non-member cannot take the booking');
+	ok((await alice.post(filmPath + '?/markBooked', { note: 'nope' })).status === 403, "someone else can't mark it booked");
+	await bob.post(filmPath + '?/markBooked', { note: '4 tickets, £48 each' });
+	page = await (await alice.req(filmPath)).text();
+	ok(page.includes('has booked') && page.includes('4 tickets'), 'booked status and note are shown');
+	ok((await (await alice.req('/plans')).text()).includes('Booked ✓'), 'plans list shows the booked flag');
+	ok((await carol.post(filmPath + '?/releaseBooking', {})).status === 403, 'only the booker or creator can clear a booking');
+	await alice.post(filmPath + '?/releaseBooking', {});
+	ok((await (await alice.req(filmPath)).text()).includes('Nobody&#39;s sorting tickets yet') || (await (await alice.req(filmPath)).text()).includes("Nobody's sorting tickets yet"), 'creator can clear a booking');
+	await bob.post(filmPath + '?/claimBooking', {});
+	await bob.post(filmPath + '?/leave', {});
+	ok(!(await (await alice.req(filmPath)).text()).includes('Booker Bob is sorting'), 'leaving the event hands back their booking');
+
+	// API
+	const apiMake = await call('/api/v1/events', { method: 'POST', body: { title: 'Api trailer', start_date: addDays(30), decide_by: addDays(10), media_link: 'https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy' } });
+	const apiEv = (await apiMake.json()).event;
+	ok(apiMake.status === 201 && apiEv.decide_by === addDays(10) && apiEv.media_link?.includes('open.spotify.com/album/') && apiEv.booking === null, 'API creates events with decide_by and media_link');
+	const apiBad = await call('/api/v1/events', { method: 'POST', body: { title: 'Api bad media', start_date: addDays(30), media_link: 'https://example.com/x' } });
+	ok(apiBad.status === 400, 'API refuses an unsupported media_link');
+	const apiClear = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { media_link: null, decide_by: null } });
+	const cleared = (await apiClear.json()).event;
+	ok(apiClear.status === 200 && cleared.media_link === null && cleared.decide_by === null, 'API can clear media_link and decide_by with null');
+
+	// share target + service worker
+	const manifest = await (await fetch(BASE + '/manifest.webmanifest')).json();
+	ok(manifest.share_target?.action === '/events/new' && manifest.share_target.params.text === 'text', 'manifest declares a share target');
+	const sw = await fetch(BASE + '/service-worker.js', { redirect: 'manual' });
+	ok(sw.status === 200 && /javascript/.test(sw.headers.get('content-type') ?? ''), 'service worker is public');
+}
+
 // Creator deletes
 const del = await alice.post(evPath + '?/delete', {});
 ok(del.status === 303 && loc(del) === '/plans', 'creator can delete the event');

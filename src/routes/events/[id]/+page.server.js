@@ -5,6 +5,7 @@ import { isRange } from '#lib/format.js';
 import {
 	addComment,
 	addOption,
+	claimBooking,
 	deleteComment,
 	deleteEvent,
 	deleteOption,
@@ -13,9 +14,12 @@ import {
 	getSwipe,
 	listComments,
 	listOptions,
+	markBooked,
+	releaseBooking,
 	setChatLink,
 	setSwipe,
-	toggleVote
+	toggleVote,
+	todayISO
 } from '#lib/server/db.js';
 
 function load_event(params) {
@@ -33,7 +37,8 @@ export function load({ params, locals }) {
 		mine: getSwipe(me, event.id),
 		options: listOptions(event.id, me),
 		comments: listComments(event.id),
-		canEdit: event.created_by === me
+		canEdit: event.created_by === me,
+		me
 	};
 }
 
@@ -100,6 +105,28 @@ export const actions = {
 		load_event(params);
 		const fd = await request.formData();
 		deleteComment(Number(fd.get('id')), locals.person.id);
+	},
+	claimBooking: ({ params, locals }) => {
+		const { event, isMember } = memberOnly(params, locals);
+		if (!isMember) return fail(403, { where: 'booking', error: 'Say you are interested first.' });
+		if ((event.end_date || event.start_date) < todayISO()) return fail(400, { where: 'booking', error: 'This event has finished.' });
+		if (!claimBooking(event.id, locals.person.id)) {
+			const now = getEvent(event.id);
+			return fail(409, { where: 'booking', error: `${now?.booker_name ?? 'Someone'} is already sorting tickets.` });
+		}
+	},
+	markBooked: async ({ params, locals, request }) => {
+		const event = load_event(params);
+		const fd = await request.formData();
+		const note = (fd.get('note') ?? '').toString().trim();
+		if (note.length > 120) return fail(400, { where: 'booking', error: 'Keep the note under 120 characters.' });
+		if (!markBooked(event.id, locals.person.id, note)) return fail(403, { where: 'booking', error: "You're not the one booking this." });
+	},
+	releaseBooking: ({ params, locals }) => {
+		const event = load_event(params);
+		if (event.booker_id !== locals.person.id && event.created_by !== locals.person.id)
+			return fail(403, { where: 'booking', error: 'Only the person booking, or the event creator, can clear this.' });
+		releaseBooking(event.id);
 	},
 	delete: ({ params, locals }) => {
 		const event = load_event(params);

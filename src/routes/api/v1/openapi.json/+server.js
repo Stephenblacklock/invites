@@ -10,6 +10,9 @@ const event = {
 		start_date: { type: 'string', format: 'date' },
 		end_date: { type: 'string', format: 'date', nullable: true },
 		chat_link: { type: 'string', nullable: true },
+		decide_by: { type: 'string', format: 'date', nullable: true, description: 'Date by which the group should decide (e.g. tickets sell out)' },
+		media_link: { type: 'string', nullable: true, description: 'YouTube or Spotify link shown as a player on the event page' },
+		booking: { type: 'object', nullable: true, description: 'Who is sorting tickets (read-only, set in the app)', properties: { status: { type: 'string', enum: ['booking', 'booked'] }, by: { type: 'string' }, note: { type: 'string', nullable: true } } },
 		created_by: { type: 'string' },
 		image: { type: 'string', nullable: true, description: 'Banner picture URL (needs the friends\' session to view)' },
 		interested: { type: 'array', items: { type: 'string' }, description: 'Names of friends who are interested' },
@@ -25,6 +28,8 @@ const input = {
 	start_date: { type: 'string', format: 'date', description: 'YYYY-MM-DD' },
 	end_date: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, omit for single-day events' },
 	chat_link: { type: 'string', nullable: true, description: 'Optional http(s) link, e.g. a WhatsApp group invite' },
+	decide_by: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, must be before the event ends. null clears it.' },
+	media_link: { type: 'string', nullable: true, description: 'A YouTube video/playlist or Spotify track/album/playlist/artist link (e.g. a trailer for a film, a playlist for a gig). null clears it.' },
 	image_url: { type: 'string', nullable: true, description: 'Direct https link to a JPEG, PNG, WebP or GIF (max 8 MB). The server downloads and keeps its own copy as the event banner. On update, null removes the banner.' }
 };
 const err = { description: 'Error', content: { 'application/json': { schema: { type: 'object', properties: { error: { type: 'string' }, details: { type: 'object' } } } } } };

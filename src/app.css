@@ -251,3 +251,12 @@ input[type='date'] { min-height: 2.9rem; }
 .prefill legend { padding: 0 0.4rem; font-weight: 600; }
 .prefill .btn { margin-top: 0.25rem; }
 .prefill small { display: block; margin-top: 0.5rem; }
+
+/* ---------- decide-by / booking flags, media player ---------- */
+.flags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0; }
+.event-main .flag { align-self: flex-start; }
+.flag { padding: 0.1rem 0.55rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 0.74rem; font-weight: 700; }
+.flag.urgent { background: #fde7d9; color: #b4410b; }
+.flag.good { background: #dff5e3; color: #1a7a34; }
+.media iframe { width: 100%; border: 0; border-radius: 12px; aspect-ratio: 16 / 9; }
+.media iframe.spotify { aspect-ratio: auto; }
