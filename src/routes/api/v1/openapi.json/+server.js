@@ -10,6 +10,8 @@ const event = {
 		start_date: { type: 'string', format: 'date' },
 		end_date: { type: 'string', format: 'date', nullable: true },
 		chat_link: { type: 'string', nullable: true },
+		price_min: { type: 'number', nullable: true, description: 'Price per person in GBP (0 = free), or the lowest price of a range' },
+		price_max: { type: 'number', nullable: true, description: 'Highest price per person in GBP, only for a range' },
 		decide_by: { type: 'string', format: 'date', nullable: true, description: 'Date by which the group should decide (e.g. tickets sell out)' },
 		media_link: { type: 'string', nullable: true, description: 'YouTube or Spotify link shown as a player on the event page' },
 		booking: { type: 'object', nullable: true, description: 'Who is sorting tickets (read-only, set in the app)', properties: { status: { type: 'string', enum: ['booking', 'booked'] }, by: { type: 'string' }, note: { type: 'string', nullable: true } } },
@@ -28,6 +30,8 @@ const input = {
 	start_date: { type: 'string', format: 'date', description: 'YYYY-MM-DD' },
 	end_date: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, omit for single-day events' },
 	chat_link: { type: 'string', nullable: true, description: 'Optional http(s) link, e.g. a WhatsApp group invite' },
+	price_min: { type: 'number', nullable: true, description: 'Price per person in GBP, e.g. 45 or 45.5 (0 = free). For a range this is the lowest price. null clears.' },
+	price_max: { type: 'number', nullable: true, description: 'Top of a price range in GBP; needs price_min and must not be lower. null clears.' },
 	decide_by: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, must be before the event ends. null clears it.' },
 	media_link: { type: 'string', nullable: true, description: 'A YouTube video/playlist or Spotify track/album/playlist/artist link (e.g. a trailer for a film, a playlist for a gig). null clears it.' },
 	image_url: { type: 'string', nullable: true, description: 'Direct https link to a JPEG, PNG, WebP or GIF (max 8 MB). The server downloads and keeps its own copy as the event banner. On update, null removes the banner.' }
@@ -91,7 +95,7 @@ export function GET({ url }) {
 					summary: 'Read a public https event or ticket page and suggest event fields (title, description, location, start_date, end_date, image_url). Nothing is saved. Suggestions can be wrong or incomplete, especially dates, so check them before create_event. Some ticket sites block this and return an error.',
 					parameters: [{ name: 'url', in: 'query', required: true, description: 'Full https link to the event page', schema: { type: 'string' } }],
 					responses: {
-						200: ok({ type: 'object', properties: { source: { type: 'string' }, suggestion: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, location: { type: 'string' }, start_date: { type: 'string' }, end_date: { type: 'string' }, image_url: { type: 'string' } } }, note: { type: 'string' } } }),
+						200: ok({ type: 'object', properties: { source: { type: 'string' }, suggestion: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, location: { type: 'string' }, start_date: { type: 'string' }, end_date: { type: 'string' }, price_min: { type: 'number' }, price_max: { type: 'number' }, image_url: { type: 'string' } } }, note: { type: 'string' } } }),
 						400: err, 401: err, 422: err, 429: err
 					}
 				}

@@ -1,6 +1,8 @@
 <script>
 	import ImageField from './ImageField.svelte';
 	let { values = {}, errors = {}, today, allowPast = false } = $props();
+	// stored as pence; while re-showing a rejected form the raw text comes back as a string
+	const money = (v) => (typeof v === 'number' ? String(v / 100) : (v ?? ''));
 	const tagText = $derived(Array.isArray(values.tags) ? values.tags.join(', ') : (values.tags ?? ''));
 </script>
 
@@ -36,6 +38,19 @@
 		{#if errors.end_date}<small class="error">{errors.end_date}</small>{/if}
 	</label>
 </div>
+<div class="row2">
+	<label>
+		<span>Price per person <em>(£, optional)</em></span>
+		<input name="price_min" inputmode="decimal" value={money(values.price_min)} placeholder="45, or free" />
+		{#if errors.price_min}<small class="error">{errors.price_min}</small>{/if}
+	</label>
+	<label>
+		<span>Up to <em>(optional)</em></span>
+		<input name="price_max" inputmode="decimal" value={money(values.price_max)} placeholder="60" />
+		{#if errors.price_max}<small class="error">{errors.price_max}</small>{/if}
+	</label>
+</div>
+
 <label>
 	<span>Decide by <em>(optional)</em></span>
 	<input type="date" name="decide_by" value={values.decide_by ?? ''} min={allowPast ? undefined : today} />

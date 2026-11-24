@@ -6,7 +6,7 @@
 	let message = $state('');
 	let failed = $state(false);
 
-	const NAMES = ['title', 'description', 'location', 'start_date', 'end_date', 'image_url'];
+	const NAMES = ['title', 'description', 'location', 'start_date', 'end_date', 'price_min', 'price_max', 'image_url'];
 
 	function setField(name, value) {
 		const el = document.querySelector(`.card-form [name="${name}"]`);
@@ -37,7 +37,8 @@
 			const missing = ['start_date', 'location'].filter((n) => !got.includes(n));
 			message =
 				`Filled in from ${data.source}.` +
-				(missing.length ? ` Please check ${missing.map((n) => (n === 'start_date' ? 'the date' : 'the location')).join(' and ')}.` : ' Have a quick look before adding.');
+				(missing.length ? ` Please check ${missing.map((n) => (n === 'start_date' ? 'the date' : 'the location')).join(' and ')}.` : ' Have a quick look before adding.') +
+				(got.includes('price_min') ? ' Prices on ticket sites are usually before booking fees.' : '');
 		} catch {
 			failed = true;
 			message = "Couldn't read that link.";

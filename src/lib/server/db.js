@@ -70,7 +70,10 @@ const MIGRATIONS = [
 	ALTER TABLE event ADD COLUMN media_link TEXT;
 	ALTER TABLE event ADD COLUMN booker_id INTEGER REFERENCES person(id) ON DELETE SET NULL;
 	ALTER TABLE event ADD COLUMN booking_status TEXT;
-	ALTER TABLE event ADD COLUMN booking_note TEXT;`
+	ALTER TABLE event ADD COLUMN booking_note TEXT;`,
+	// v5: price per person in pence (price_max only for a range)
+	`ALTER TABLE event ADD COLUMN price_min INTEGER;
+	ALTER TABLE event ADD COLUMN price_max INTEGER;`
 ];
 
 let _db;
@@ -186,10 +189,10 @@ export function createEvent(v, personId) {
 	return d.transaction(() => {
 		const info = d
 			.prepare(
-				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, created_by)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, price_min, price_max, created_by)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, personId);
+			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, personId);
 		const id = Number(info.lastInsertRowid);
 		setSwipe(personId, id, 'interested');
 		return id;
@@ -200,10 +203,10 @@ export function updateEvent(id, v) {
 	db()
 		.prepare(
 			`UPDATE event SET title = ?, description = ?, location = ?, tags = ?, start_date = ?, end_date = ?, chat_link = ?,
-			   decide_by = ?, media_link = ?
+			   decide_by = ?, media_link = ?, price_min = ?, price_max = ?
 			 WHERE id = ?`
 		)
-		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, id);
+		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, id);
 	// Poll options that now fall outside the event's dates are no longer valid
 	db()
 		.prepare('DELETE FROM date_option WHERE event_id = ? AND (date < ? OR date > ?)')

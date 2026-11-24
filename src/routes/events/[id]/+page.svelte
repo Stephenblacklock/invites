@@ -1,6 +1,6 @@
 <script>
 	import { enhance } from '$app/forms';
-	import { bg, countdown, fmtDate, fmtRange, hue, isRange } from '#lib/format.js';
+	import { bg, countdown, fmtDate, fmtRange, hue, isRange, priceLabel } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 	import MediaEmbed from '#lib/components/MediaEmbed.svelte';
 
@@ -25,6 +25,9 @@
 <section class="panel">
 	{#if ev.location}
 		<p class="meta"><span class="k">Where</span> {ev.location}</p>
+	{/if}
+	{#if priceLabel(ev)}
+		<p class="meta"><span class="k">Price</span> {priceLabel(ev)}{ev.price_min === 0 && ev.price_max == null ? '' : ' per person'}</p>
 	{/if}
 	{#if ev.decide_by && ev.decide_by >= data.today}
 		<p class="meta"><span class="k">Decide by</span> {fmtDate(ev.decide_by, data.today)}</p>

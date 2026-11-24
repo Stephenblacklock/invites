@@ -19,6 +19,15 @@ export function parseTags(raw) {
 	return [...seen];
 }
 
+/** '45', '£45.50', 'free' or '0' → pence; '' → null; anything else → undefined (invalid). */
+export function parsePrice(raw) {
+	const t = String(raw ?? '').trim().replace(/^£/, '').replace(/,/g, '').toLowerCase();
+	if (!t) return null;
+	if (t === 'free') return 0;
+	if (!/^\d{1,5}(\.\d{1,2})?$/.test(t)) return undefined;
+	return Math.round(parseFloat(t) * 100);
+}
+
 export function cleanLink(raw) {
 	const s = (raw ?? '').toString().trim();
 	if (!s) return { ok: true, value: null };
@@ -46,6 +55,8 @@ export function validateEvent(fd, { today, requireFuture }) {
 	const end = get('end_date');
 	const link = cleanLink(get('chat_link'));
 	const decideBy = get('decide_by');
+	const pMin = parsePrice(get('price_min'));
+	const pMax = parsePrice(get('price_max'));
 	const media = get('media_link');
 
 	if (!title) errors.title = 'Give it a title';
@@ -63,6 +74,12 @@ export function validateEvent(fd, { today, requireFuture }) {
 		else if (!errors.start_date && !errors.end_date && decideBy > (end || start)) errors.decide_by = 'Pick a date before the event ends';
 		else if (requireFuture && decideBy < today) errors.decide_by = 'That date has already passed';
 	}
+	if (pMin === undefined) errors.price_min = 'Enter an amount like 45 or 45.50, or "free"';
+	if (pMax === undefined) errors.price_max = 'Enter an amount like 60 or 60.50';
+	if (!errors.price_min && !errors.price_max && pMax != null) {
+		if (pMin == null) errors.price_min = 'Add the lowest price too';
+		else if (pMax < pMin) errors.price_max = 'The top price is below the lowest price';
+	}
 	if (media && !parseMedia(media)) errors.media_link = 'Use a YouTube or Spotify link';
 	if (!link.ok) errors.chat_link = 'Enter a full http(s) link, e.g. a WhatsApp invite';
 
@@ -75,6 +92,9 @@ export function validateEvent(fd, { today, requireFuture }) {
 		end_date: end && end !== start ? end : null,
 		chat_link: link.ok ? link.value : null,
 		decide_by: decideBy || null,
+		// keep what was typed when it was invalid so the form can show it again
+		price_min: pMin === undefined ? get('price_min') : pMin,
+		price_max: pMax === undefined ? get('price_max') : pMax != null && pMax === pMin ? null : pMax,
 		media_link: media ? (parseMedia(media)?.link ?? null) : null
 	};
 	return { ok: Object.keys(errors).length === 0, errors, values };

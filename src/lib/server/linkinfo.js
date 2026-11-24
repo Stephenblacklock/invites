@@ -101,8 +101,29 @@ function placeText(loc) {
 	return [l.name, where].filter(Boolean).join(', ');
 }
 
+/** GBP price range from schema.org offers (single Offer, AggregateOffer, or a list). Other currencies are ignored. */
+function readPrices(offers) {
+	const nums = [];
+	const walk = (o, depth = 0) => {
+		if (!o || typeof o !== 'object' || depth > 3) return;
+		if (Array.isArray(o)) return o.forEach((x) => walk(x, depth + 1));
+		if (String(o.priceCurrency ?? '').toUpperCase() === 'GBP') {
+			for (const k of ['price', 'lowPrice', 'highPrice']) {
+				const n = parseFloat(String(o[k] ?? '').replace(/,/g, ''));
+				if (Number.isFinite(n) && n >= 0 && n <= 99999) nums.push(n);
+			}
+		}
+		walk(o.offers, depth + 1);
+	};
+	walk(offers);
+	if (!nums.length) return null;
+	const lo = Math.min(...nums);
+	const hi = Math.max(...nums);
+	return { price_min: lo, ...(hi > lo ? { price_max: hi } : {}) };
+}
+
 /**
- * Pure extraction from page HTML. @returns {{title?:string, description?:string, location?:string, start_date?:string, end_date?:string, image_url?:string}}
+ * Pure extraction from page HTML. @returns {{title?:string, description?:string, location?:string, start_date?:string, end_date?:string, price_min?:number, price_max?:number, image_url?:string}}
  */
 export function extractInfo(html, baseUrl) {
 	const meta = readMetas(html);
@@ -128,6 +149,7 @@ export function extractInfo(html, baseUrl) {
 		const end = toDay(ev?.endDate);
 		if (end && end > start) out.end_date = end;
 	}
+	if (ev?.offers) Object.assign(out, readPrices(ev.offers));
 	const rawImage = firstString(ev?.image) || meta['og:image:secure_url'] || meta['og:image'] || meta['twitter:image'];
 	if (rawImage) {
 		try {

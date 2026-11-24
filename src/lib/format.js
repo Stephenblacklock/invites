@@ -61,9 +61,19 @@ export function bg(image) {
 	return image ? `linear-gradient(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.58)), url(/img/${image})` : undefined;
 }
 
+const pounds = (pence) => '£' + (pence % 100 ? (pence / 100).toFixed(2) : String(pence / 100));
+/** '£45', '£30–£60', 'Free' or null when no price is set. Prices are pence. */
+export function priceLabel(ev) {
+	if (ev.price_min == null) return null;
+	if (ev.price_min === 0 && ev.price_max == null) return 'Free';
+	return ev.price_max != null ? `${pounds(ev.price_min)}–${pounds(ev.price_max)}` : pounds(ev.price_min);
+}
+
 /** Small status flags shown on cards and rows: decide-by date and ticket booking. */
 export function flags(ev, today) {
 	const out = [];
+	const price = priceLabel(ev);
+	if (price) out.push({ text: price, price: true });
 	if (ev.decide_by && ev.decide_by >= today) {
 		const n = dayDiff(today, ev.decide_by);
 		out.push({

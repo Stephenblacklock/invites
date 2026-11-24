@@ -502,6 +502,51 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok(sw.status === 200 && /javascript/.test(sw.headers.get('content-type') ?? ''), 'service worker is public');
 }
 
+// ------------------------------------------------------------ price
+{
+	const { parsePrice } = await import('../src/lib/validate.js');
+	ok(parsePrice('45') === 4500 && parsePrice('£45.50') === 4550 && parsePrice('1,200') === 120000, 'price: pounds are parsed to pence');
+	ok(parsePrice('free') === 0 && parsePrice('0') === 0 && parsePrice('') === null, 'price: free, zero and blank');
+	ok(parsePrice('abc') === undefined && parsePrice('45.555') === undefined && parsePrice('-5') === undefined, 'price: junk is rejected');
+
+	const { extractInfo } = await import('../src/lib/server/linkinfo.js');
+	const offers = (o) => extractInfo(`<title>Show</title><script type="application/ld+json">{"@type":"Event","name":"Some show","startDate":"2026-12-01","offers":${o}}</script>`, 'https://example.com/');
+	const agg = offers('{"@type":"AggregateOffer","priceCurrency":"GBP","lowPrice":"30","highPrice":"60.5"}');
+	ok(agg.price_min === 30 && agg.price_max === 60.5, 'prefill: price range read from an AggregateOffer');
+	const one = offers('[{"@type":"Offer","priceCurrency":"GBP","price":"45.00"}]');
+	ok(one.price_min === 45 && one.price_max === undefined, 'prefill: single offer price read');
+	const usd = offers('{"@type":"Offer","priceCurrency":"USD","price":"45"}');
+	ok(usd.price_min === undefined, 'prefill: non-GBP prices are ignored');
+
+	const mk = (extra) => alice.post('/events/new', { title: 'Priced ' + Math.random().toString(36).slice(2, 6), start_date: addDays(50), ...extra });
+	const range = await mk({ price_min: '45', price_max: '60' });
+	const rangePath = loc(range);
+	ok(range.status === 303 && !!rangePath, 'event with a price range is created');
+	const rangePage = await (await alice.req(rangePath)).text();
+	ok(rangePage.includes('£45–£60') && rangePage.includes('per person'), 'event page shows the price range');
+	ok((await (await alice.req('/plans')).text()).includes('£45–£60'), 'plans list shows the price flag');
+	const free = await mk({ price_min: 'free' });
+	ok(!!loc(free) && (await (await alice.req(loc(free))).text()).includes('Free'), '"free" is accepted and shown as Free');
+	ok((await mk({ price_max: '60' })).status === 400, 'a top price without a lowest price is refused');
+	ok((await mk({ price_min: '60', price_max: '45' })).status === 400, 'a top price below the lowest is refused');
+	const junk = await mk({ price_min: 'abc' });
+	ok(junk.status === 400 && (await junk.text()).includes('value="abc"'), 'a bad price is refused and what was typed is shown again');
+	const edit = await alice.post(rangePath + '/edit', { title: 'Priced renamed', start_date: addDays(50), price_min: '45.5', price_max: '' });
+	ok(edit.status === 303 && (await (await alice.req(rangePath)).text()).includes('£45.50'), 'editing the price works and keeps pence');
+
+	const apiMake = await call('/api/v1/events', { method: 'POST', body: { title: 'Api priced', start_date: addDays(30), price_min: 45.5, price_max: 60 } });
+	const apiEv = (await apiMake.json()).event;
+	ok(apiMake.status === 201 && apiEv.price_min === 45.5 && apiEv.price_max === 60, 'API creates events with a price range (pounds)');
+	const rename = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { title: 'Api priced renamed' } });
+	const renamed = (await rename.json()).event;
+	ok(renamed.price_min === 45.5 && renamed.price_max === 60, 'API update keeps the price when it is not sent');
+	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_max: 40 } })).status === 400, 'API refuses a top price below the lowest');
+	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: 'abc' } })).status === 400, 'API refuses a non-numeric price');
+	const clear = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: null, price_max: null } });
+	const cleared = (await clear.json()).event;
+	ok(clear.status === 200 && cleared.price_min === null && cleared.price_max === null, 'API can clear the price with null');
+}
+
 // Creator deletes
 const del = await alice.post(evPath + '?/delete', {});
 ok(del.status === 303 && loc(del) === '/plans', 'creator can delete the event');
