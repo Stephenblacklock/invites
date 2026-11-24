@@ -20,7 +20,8 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     DB_PATH=/data/invites.db \
-    TZ=Europe/London
+    TZ=Europe/London \
+    BODY_SIZE_LIMIT=12M
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/build ./build

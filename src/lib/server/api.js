@@ -45,6 +45,7 @@ export function shapeEvent(e, url) {
 		end_date: e.end_date,
 		chat_link: e.chat_link,
 		created_by: e.creator_name,
+		image: e.image ? `${origin(url)}/img/${e.image}` : null,
 		interested: e.interested.map((p) => p.name),
 		interested_count: e.interested.length,
 		url: `${origin(url)}/events/${e.id}`
@@ -67,7 +68,8 @@ export function bodyToForm(body, base = {}) {
 	const errors = {};
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return { errors: { body: 'Expected a JSON object' } };
 	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link'];
-	for (const k of Object.keys(body)) if (!allowed.includes(k)) errors[k] = 'Unknown field';
+	for (const k of Object.keys(body)) if (!allowed.includes(k) && k !== 'image_url') errors[k] = 'Unknown field';
+	if ('image_url' in body && body.image_url !== null && typeof body.image_url !== 'string') errors.image_url = 'Must be a string or null';
 	const fd = new FormData();
 	for (const k of allowed) {
 		let v = k in body ? body[k] : base[k];

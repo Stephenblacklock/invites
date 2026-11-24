@@ -15,13 +15,15 @@ class Client {
 	constructor(ip) {
 		this.ip = ip;
 	}
-	async req(path, { method = 'GET', form, json, headers = {} } = {}) {
+	async req(path, { method = 'GET', form, json, multipart, headers = {} } = {}) {
 		const h = { origin: BASE, accept: 'text/html', 'cf-connecting-ip': this.ip, ...headers };
 		if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
 		let body;
 		if (form) {
 			body = new URLSearchParams(form);
 			h['content-type'] = 'application/x-www-form-urlencoded';
+		} else if (multipart) {
+			body = multipart;
 		} else if (json) {
 			body = JSON.stringify(json);
 			h['content-type'] = 'application/json';
@@ -236,6 +238,83 @@ ok(after.status === 303 && loc(after) === '/login', 'logout clears the session')
 	const plansApi = await (await call('/api/v1/plans')).json();
 	ok(plansApi.events.some((e) => e.id === made.event.id), 'API plans lists the event');
 	ok((await call(`/api/v1/events/${made.event.id}`, { method: 'DELETE' })).status === 405, 'API has no delete');
+}
+
+const API_TOKEN_SHARED = 'api-token-for-smoke-tests-0123456789';
+const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
+	fetch(BASE + path, {
+		method,
+		headers: { 'content-type': 'application/json', 'cf-connecting-ip': '10.0.9.8', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+		body: body ? JSON.stringify(body) : undefined
+	});
+
+// ------------------------------------------------------------ banner images
+{
+	// 1x1 PNG
+	const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+	const form = (extra = {}, file) => {
+		const fd = new FormData();
+		const base = { title: 'Pictured', start_date: addDays(6), ...extra };
+		for (const [k, v] of Object.entries(base)) fd.set(k, v);
+		if (file) fd.set('image', file, file.name);
+		return fd;
+	};
+	const imgRe = /\/img\/([a-f0-9]{32}\.(?:png|jpg|gif|webp))/;
+
+	const withPic = await alice.req('/events/new', { method: 'POST', multipart: form({}, new File([PNG], 'banner.png', { type: 'image/png' })) });
+	ok(withPic.status === 303, 'event with an uploaded banner is created');
+	const picPath = loc(withPic);
+	const picHtml = await (await alice.req(picPath)).text();
+	const picName = imgRe.exec(picHtml)?.[1];
+	ok(!!picName, 'event page references the banner image');
+	const served = await alice.req(`/img/${picName}`);
+	ok(served.status === 200 && served.headers.get('content-type') === 'image/png', 'banner is served as image/png');
+	ok((served.headers.get('content-security-policy') ?? '').includes('sandbox'), 'banner response carries a sandbox CSP');
+	const anon = await new Client('10.0.2.2').req(`/img/${picName}`);
+	ok(anon.status === 303 && loc(anon) === '/login', 'banner is not served without a session');
+	ok((await alice.req('/img/../../etc/passwd')).status !== 200, 'path traversal in /img is refused');
+	ok((await alice.req('/img/not-a-valid-name.png')).status === 404, 'invalid image name is 404');
+
+	const fake = await alice.req('/events/new', { method: 'POST', multipart: form({ title: 'Fake' }, new File([Buffer.from('<script>alert(1)</script> this is not an image')], 'x.png', { type: 'image/png' })) });
+	ok(fake.status === 400, 'a non-image file named .png is rejected');
+	const svg = await alice.req('/events/new', { method: 'POST', multipart: form({ title: 'Svg' }, new File([Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg>')], 'x.svg', { type: 'image/svg+xml' })) });
+	ok(svg.status === 400, 'SVG upload is rejected');
+	const big = await alice.req('/events/new', { method: 'POST', multipart: form({ title: 'Big' }, new File([Buffer.concat([PNG, Buffer.alloc(9 * 1024 * 1024)])], 'big.png', { type: 'image/png' })) });
+	ok(big.status === 400 || big.status === 413, 'an oversize image is rejected');
+
+	for (const [label, url] of [
+		['plain http link', 'http://example.com/a.png'],
+		['loopback address', 'https://127.0.0.1/a.png'],
+		['private LAN address', 'https://192.168.1.1/a.png'],
+		['cloud metadata address', 'https://169.254.169.254/latest/meta-data/'],
+		['IPv6 loopback', 'https://[::1]/a.png'],
+		['link with credentials', 'https://user:pw@example.com/a.png'],
+		['non-standard port', 'https://example.com:8443/a.png']
+	]) {
+		const r = await alice.req('/events/new', { method: 'POST', multipart: form({ title: 'Link ' + label, image_url: url }) });
+		ok(r.status === 400, `image link refused: ${label}`);
+	}
+
+	// edit: remove the banner, file goes away
+	const rm = await alice.req(picPath + '/edit', { method: 'POST', multipart: form({ remove_image: 'on' }) });
+	ok(rm.status === 303, 'edit with "remove banner" saves');
+	ok(!imgRe.test(await (await alice.req(picPath)).text()), 'event page no longer shows a banner');
+	ok((await alice.req(`/img/${picName}`)).status === 404, 'removed banner file is gone');
+
+	// API image_url guards
+	const apiBlocked = await call('/api/v1/events', { method: 'POST', body: { title: 'Api pic', start_date: addDays(8), image_url: 'https://10.0.0.5/a.png' } });
+	ok(apiBlocked.status === 400, 'API refuses an image_url pointing at a private address');
+	const apiBadType = await call('/api/v1/events', { method: 'POST', body: { title: 'Api pic2', start_date: addDays(8), image_url: 5 } });
+	ok(apiBadType.status === 400, 'API refuses a non-string image_url');
+	const apiOk = await call('/api/v1/events', { method: 'POST', body: { title: 'Api no pic', start_date: addDays(8) } });
+	ok(apiOk.status === 201 && (await apiOk.json()).event.image === null, 'API events report image: null when there is no banner');
+
+	// deleting an event deletes its banner
+	const delPic = await alice.req('/events/new', { method: 'POST', multipart: form({ title: 'To delete' }, new File([PNG], 'b.png', { type: 'image/png' })) });
+	const delPath = loc(delPic);
+	const delName = imgRe.exec(await (await alice.req(delPath)).text())?.[1];
+	await alice.post(delPath + '?/delete', {});
+	ok(!!delName && (await alice.req(`/img/${delName}`)).status === 404, 'deleting an event removes its banner file');
 }
 
 // Creator deletes

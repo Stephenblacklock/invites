@@ -2,9 +2,11 @@ import {
 	createEvent,
 	findDuplicateEvent,
 	getEvent,
+	setImage,
 	listEvents,
 	todayISO
 } from '#lib/server/db.js';
+import { resolveImage } from '#lib/server/images.js';
 import { apiError, json, shapeEvent, validateBody } from '#lib/server/api.js';
 
 export function GET({ url }) {
@@ -32,6 +34,9 @@ export async function POST({ request, locals, url }) {
 			409
 		);
 	}
+	const img = await resolveImage({ url: body.image_url });
+	if (img?.error) return apiError(400, 'Validation failed', { image_url: img.error });
 	const id = createEvent(r.values, locals.person.id);
+	if (img?.name) setImage(id, img.name);
 	return json({ event: shapeEvent(getEvent(id), url) }, 201);
 }

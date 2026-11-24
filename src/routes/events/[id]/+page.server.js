@@ -1,4 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
+import { removeImage } from '#lib/server/images.js';
 import { cleanLink, isValidDate } from '#lib/validate.js';
 import { isRange } from '#lib/format.js';
 import {
@@ -104,6 +105,7 @@ export const actions = {
 		const event = load_event(params);
 		if (event.created_by !== locals.person.id) return fail(403, { where: 'delete', error: 'Only the creator can delete this.' });
 		deleteEvent(event.id);
+		removeImage(event.image);
 		redirect(303, '/plans');
 	}
 };

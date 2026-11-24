@@ -1,4 +1,5 @@
-import { getEvent, todayISO, updateEvent } from '#lib/server/db.js';
+import { getEvent, setImage, todayISO, updateEvent } from '#lib/server/db.js';
+import { removeImage, resolveImage } from '#lib/server/images.js';
 import { apiError, json, shapeDetail, validateBody } from '#lib/server/api.js';
 
 function load(params) {
@@ -25,6 +26,18 @@ export async function PATCH({ params, request, locals, url }) {
 	const base = { ...e, tags: e.tags };
 	const r = validateBody(body, { base, today: todayISO(), requireFuture: false });
 	if (!r.ok) return apiError(400, 'Validation failed', r.errors);
+	let img = null;
+	if (body.image_url) {
+		img = await resolveImage({ url: body.image_url });
+		if (img?.error) return apiError(400, 'Validation failed', { image_url: img.error });
+	}
 	updateEvent(e.id, r.values);
+	if (img?.name) {
+		setImage(e.id, img.name);
+		removeImage(e.image);
+	} else if (body.image_url === null && e.image) {
+		setImage(e.id, null);
+		removeImage(e.image);
+	}
 	return json({ event: shapeDetail(getEvent(e.id), url, locals.person.id) });
 }

@@ -1,12 +1,12 @@
 <script>
-	import { countdown, fmtRange, hue } from '#lib/format.js';
+	import { bg, countdown, fmtRange, hue } from '#lib/format.js';
 	import Avatars from './Avatars.svelte';
 	let { event, today } = $props();
 	const h = $derived(hue(event.title));
 </script>
 
 <a class="event-row" href="/events/{event.id}" style:--h={h}>
-	<span class="date-chip">
+	<span class="date-chip" class:has-image={event.image} style:background-image={bg(event.image)}>
 		<span class="d1">{countdown(event.start_date, event.end_date, today)}</span>
 	</span>
 	<span class="event-main">

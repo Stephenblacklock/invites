@@ -58,7 +58,9 @@ const MIGRATIONS = [
 		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	CREATE INDEX comment_event ON comment (event_id, id);
-	`
+	`,
+	// v2: optional banner image (stored filename in <data dir>/images)
+	`ALTER TABLE event ADD COLUMN image TEXT;`
 ];
 
 let _db;
@@ -169,6 +171,10 @@ export function updateEvent(id, v) {
 	db()
 		.prepare('DELETE FROM date_option WHERE event_id = ? AND (date < ? OR date > ?)')
 		.run(id, v.start_date, v.end_date ?? v.start_date);
+}
+
+export function setImage(id, name) {
+	db().prepare('UPDATE event SET image = ? WHERE id = ?').run(name, id);
 }
 
 export function setChatLink(id, link) {

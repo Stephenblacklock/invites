@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { countdown, fmtRange, hue } from '#lib/format.js';
+	import { bg, countdown, fmtRange, hue } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 
 	let { data } = $props();
@@ -143,7 +143,7 @@
 		{#if next}
 			{#key next.id}
 				<article class="card behind" style:--h={hue(next.title)} aria-hidden="true">
-					<div class="banner"></div>
+					<div class="banner" class:has-image={next.image} style:background-image={bg(next.image)}></div>
 				</article>
 			{/key}
 		{/if}
@@ -158,7 +158,7 @@
 				onpointerup={up}
 				onpointercancel={up}
 			>
-				<div class="banner">
+				<div class="banner" class:has-image={top.image} style:background-image={bg(top.image)}>
 					<span class="pill">{countdown(top.start_date, top.end_date, data.today)}</span>
 					<span class="banner-date">{fmtRange(top.start_date, top.end_date, data.today)}</span>
 				</div>

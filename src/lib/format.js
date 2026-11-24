@@ -55,3 +55,8 @@ export function namesLabel(names, max = 3) {
 	if (names.length <= max) return names.join(', ');
 	return `${names.slice(0, max).join(', ')} +${names.length - max}`;
 }
+
+/** CSS background for an event banner: the picture under a dark wash so text stays readable (undefined = keep the colour gradient). */
+export function bg(image) {
+	return image ? `linear-gradient(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.58)), url(/img/${image})` : undefined;
+}

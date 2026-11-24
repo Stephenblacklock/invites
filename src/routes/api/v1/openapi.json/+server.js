@@ -11,6 +11,7 @@ const event = {
 		end_date: { type: 'string', format: 'date', nullable: true },
 		chat_link: { type: 'string', nullable: true },
 		created_by: { type: 'string' },
+		image: { type: 'string', nullable: true, description: 'Banner picture URL (needs the friends\' session to view)' },
 		interested: { type: 'array', items: { type: 'string' }, description: 'Names of friends who are interested' },
 		interested_count: { type: 'integer' },
 		url: { type: 'string' }
@@ -23,7 +24,8 @@ const input = {
 	tags: { type: 'array', items: { type: 'string' }, maxItems: 8, description: 'Short lowercase labels' },
 	start_date: { type: 'string', format: 'date', description: 'YYYY-MM-DD' },
 	end_date: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, omit for single-day events' },
-	chat_link: { type: 'string', nullable: true, description: 'Optional http(s) link, e.g. a WhatsApp group invite' }
+	chat_link: { type: 'string', nullable: true, description: 'Optional http(s) link, e.g. a WhatsApp group invite' },
+	image_url: { type: 'string', nullable: true, description: 'Direct https link to a JPEG, PNG, WebP or GIF (max 8 MB). The server downloads and keeps its own copy as the event banner. On update, null removes the banner.' }
 };
 const err = { description: 'Error', content: { 'application/json': { schema: { type: 'object', properties: { error: { type: 'string' }, details: { type: 'object' } } } } } };
 const ok = (schema, description = 'OK') => ({ description, content: { 'application/json': { schema } } });

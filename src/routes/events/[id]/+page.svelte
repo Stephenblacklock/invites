@@ -1,6 +1,6 @@
 <script>
 	import { enhance } from '$app/forms';
-	import { countdown, fmtDate, fmtRange, hue, isRange } from '#lib/format.js';
+	import { bg, countdown, fmtDate, fmtRange, hue, isRange } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 
 	let { data, form } = $props();
@@ -15,7 +15,7 @@
 
 <a class="back" href="/plans">← Plans</a>
 
-<header class="event-hero" style:--h={hue(ev.title)}>
+<header class="event-hero" class:has-image={ev.image} style:--h={hue(ev.title)} style:background-image={bg(ev.image)}>
 	<span class="pill">{countdown(ev.start_date, ev.end_date, data.today)}</span>
 	<h1>{ev.title}</h1>
 	<p>{fmtRange(ev.start_date, ev.end_date, data.today)}</p>

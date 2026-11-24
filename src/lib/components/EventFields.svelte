@@ -1,4 +1,5 @@
 <script>
+	import ImageField from './ImageField.svelte';
 	let { values = {}, errors = {}, today, allowPast = false } = $props();
 	const tagText = $derived(Array.isArray(values.tags) ? values.tags.join(', ') : (values.tags ?? ''));
 </script>
@@ -47,3 +48,5 @@
 	<input name="chat_link" type="url" value={values.chat_link ?? ''} placeholder="https://chat.whatsapp.com/…" />
 	{#if errors.chat_link}<small class="error">{errors.chat_link}</small>{/if}
 </label>
+
+<ImageField image={values.image ?? null} error={errors.image} />
