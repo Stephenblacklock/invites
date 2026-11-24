@@ -317,6 +317,104 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok(!!delName && (await alice.req(`/img/${delName}`)).status === 404, 'deleting an event removes its banner file');
 }
 
+// ------------------------------------------------------------ link prefill
+{
+	const { extractInfo } = await import('../src/lib/server/linkinfo.js');
+	const ld = extractInfo(
+		`<html><head><title>Bleachers Tickets | Eventim Apollo</title>
+		<meta property="og:title" content="Bleachers Tickets | Eventim Apollo">
+		<meta property="og:image" content="/img/hero.jpg">
+		<script type="application/ld+json">{"@context":"https://schema.org","@type":"MusicEvent","name":"Bleachers &amp; Friends","description":"<p>Big night, loud.</p>","startDate":"2026-12-03T19:30:00","endDate":"2026-12-03","location":{"@type":"Place","name":"Eventim Apollo","address":{"addressLocality":"London"}},"image":["https://cdn.example.com/b.jpg"]}</script></head></html>`,
+		'https://tickets.example.com/e/1'
+	);
+	ok(ld.title === 'Bleachers & Friends', 'prefill: title comes from the Event JSON-LD and entities are decoded');
+	ok(ld.description === 'Big night, loud.', 'prefill: description has tags stripped');
+	ok(ld.location === 'Eventim Apollo, London', 'prefill: venue and town combined');
+	ok(ld.start_date === '2026-12-03' && ld.end_date === undefined, 'prefill: start date read, same-day end date dropped');
+	ok(ld.image_url === 'https://cdn.example.com/b.jpg', 'prefill: JSON-LD image used');
+
+	const og = extractInfo(
+		`<title>x</title><meta property="og:title" content="Winter Wonderland | Hyde Park"><meta name="description" content="Rides &amp; mulled wine"><meta property="og:image" content="http://example.com/x.png">`,
+		'https://example.com/a'
+	);
+	ok(og.title === 'Winter Wonderland' && og.description === 'Rides & mulled wine', 'prefill: falls back to Open Graph tags');
+	ok(og.image_url === 'https://example.com/x.png' && og.start_date === undefined, 'prefill: http image upgraded to https, no invented date');
+
+	const list = extractInfo(
+		`<title>Upcoming shows</title><script type="application/ld+json">[{"@type":"Event","name":"Alpha show","startDate":"2026-01-01"},{"@type":"Event","name":"Beta show","startDate":"2026-02-02"}]</script>`,
+		'https://example.com/'
+	);
+	ok(list.title === 'Upcoming shows' && list.start_date === undefined, 'prefill: a listing page with several events does not guess one');
+
+	const graph = extractInfo(
+		`<title>Hamilton</title><script type="application/ld+json">{"@graph":[{"@type":"WebPage"},{"@type":["Event","TheaterEvent"],"name":"Hamilton","startDate":"2026-12-10","endDate":"2026-12-20"}]}</script>`,
+		'https://example.com/'
+	);
+	ok(graph.start_date === '2026-12-10' && graph.end_date === '2026-12-20', 'prefill: finds events inside @graph and keeps multi-day ranges');
+
+	const anon = new Client('10.0.2.1');
+	const anonRes = await anon.req('/events/prefill', { method: 'POST', json: { url: 'https://example.com' } });
+	ok(anonRes.status === 303 && loc(anonRes) === '/login', 'prefill needs a login');
+	const post = (url) => alice.req('/events/prefill', { method: 'POST', json: url === undefined ? {} : { url } });
+	ok((await post('http://example.com')).status === 422, 'prefill refuses http links');
+	ok((await post('https://127.0.0.1/')).status === 422, 'prefill refuses loopback addresses');
+	ok((await post('https://169.254.169.254/latest/meta-data')).status === 422, 'prefill refuses the cloud metadata address');
+	ok((await post('https://192.168.1.1/')).status === 422, 'prefill refuses LAN addresses');
+	ok((await post()).status === 400, 'prefill needs a link');
+	let limited = false;
+	for (let i = 0; i < 15 && !limited; i++) limited = (await post('http://example.com')).status === 429;
+	ok(limited, 'prefill is rate limited per person');
+}
+
+// ------------------------------------------------------------ calendar export
+{
+	const { chosenDate, buildCalendar } = await import('../src/lib/server/ics.js');
+	ok(chosenDate([{ date: '2026-12-01', voters: ['a'] }, { date: '2026-12-02', voters: ['a', 'b'] }]) === '2026-12-02', 'ics: most-voted date wins');
+	ok(chosenDate([{ date: '2026-12-01', voters: [] }]) === null, 'ics: no votes means no chosen date');
+	const long = buildCalendar(
+		[{ event: { id: 1, title: 'Ünïcode ' + 'x'.repeat(200), description: 'y'.repeat(300), start_date: '2026-12-01', end_date: null, location: null, interested: [] }, chosen: null }],
+		{ origin: 'https://invites.example.com' }
+	);
+	ok(long.split('\r\n').every((l) => Buffer.byteLength(l) <= 75), 'ics: long lines are folded to 75 bytes');
+
+	const start = addDays(9);
+	const created = await alice.post('/events/new', { title: 'Fish, chips; & more', description: 'line one\nline two', start_date: start });
+	const evPath2 = loc(created);
+	ok(created.status === 303 && !!evPath2, 'calendar: created a test event');
+	const ics = await alice.req(evPath2 + '/calendar.ics');
+	const body = await ics.text();
+	ok(ics.status === 200 && (ics.headers.get('content-type') ?? '').startsWith('text/calendar'), 'event .ics is served as text/calendar');
+	ok(body.includes('BEGIN:VEVENT') && body.includes('SUMMARY:Fish\\, chips\; & more'), 'ics: commas and semicolons are escaped');
+	ok(body.includes('line one\\nline two'), 'ics: newlines are escaped');
+	ok(body.includes(`DTSTART;VALUE=DATE:${start.replaceAll('-', '')}`) && body.includes(`DTEND;VALUE=DATE:${addDays(10).replaceAll('-', '')}`), 'ics: all-day event ends the day after (exclusive end)');
+	ok((await new Client('10.0.2.2').req(evPath2 + '/calendar.ics')).status === 303, 'event .ics needs a login');
+	ok((await alice.req('/events/999999/calendar.ics')).status === 404, 'event .ics for a missing event is 404');
+
+	// subscription feed
+	const plans = await (await alice.req('/plans')).text();
+	const token = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(plans)?.[1];
+	ok(!!token, 'plans page shows the personal feed link');
+	const anon = new Client('10.0.2.3');
+	const feed = await anon.req(`/calendar/${token}.ics`);
+	const feedBody = await feed.text();
+	ok(feed.status === 200 && (feed.headers.get('content-type') ?? '').startsWith('text/calendar'), 'feed works without a cookie');
+	ok(feedBody.includes('BEGIN:VCALENDAR') && feedBody.includes('SUMMARY:Fish\\, chips\; & more'), 'feed lists events the person is interested in');
+	ok((await anon.req('/calendar/' + 'a'.repeat(32) + '.ics')).status === 404, 'feed with a wrong token is 404');
+	ok((await anon.req('/calendar/short.ics')).status === 404, 'feed with a malformed token is 404');
+	const other = new Client('10.0.2.4');
+	await other.post('/login', { password: PASSWORD });
+	await other.post('/who?/create', { name: 'Calendar Bob' });
+	const otherPlans = await (await other.req('/plans')).text();
+	const otherToken = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(otherPlans)?.[1];
+	const otherFeed = await (await anon.req(`/calendar/${otherToken}.ics`)).text();
+	ok(!!otherToken && otherToken !== token && !otherFeed.includes('Fish\\, chips'), "someone else's feed doesn't include events they haven't joined");
+	await alice.post('/plans?/resetCalendar', {});
+	const newToken = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(await (await alice.req('/plans')).text())?.[1];
+	ok(!!newToken && newToken !== token, 'resetting makes a new feed link');
+	ok((await anon.req(`/calendar/${token}.ics`)).status === 404 && (await anon.req(`/calendar/${newToken}.ics`)).status === 200, 'old feed link stops working, new one works');
+	await alice.post(evPath2 + '?/delete', {});
+}
+
 // Creator deletes
 const del = await alice.post(evPath + '?/delete', {});
 ok(del.status === 303 && loc(del) === '/plans', 'creator can delete the event');

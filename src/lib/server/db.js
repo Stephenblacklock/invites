@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -60,7 +61,10 @@ const MIGRATIONS = [
 	CREATE INDEX comment_event ON comment (event_id, id);
 	`,
 	// v2: optional banner image (stored filename in <data dir>/images)
-	`ALTER TABLE event ADD COLUMN image TEXT;`
+	`ALTER TABLE event ADD COLUMN image TEXT;`,
+	// v3: secret per-person token for the read-only calendar feed
+	`ALTER TABLE person ADD COLUMN cal_token TEXT;
+	CREATE UNIQUE INDEX person_cal_token ON person (cal_token) WHERE cal_token IS NOT NULL;`
 ];
 
 let _db;
@@ -113,6 +117,21 @@ export function createPerson(name) {
 }
 export function findPersonByName(name) {
 	return db().prepare('SELECT id, name FROM person WHERE name = ?').get(name) ?? null;
+}
+
+// ---------------------------------------------------------------- calendar feed token
+export function getCalToken(personId) {
+	const row = db().prepare('SELECT cal_token FROM person WHERE id = ?').get(personId);
+	if (row?.cal_token) return row.cal_token;
+	return resetCalToken(personId);
+}
+export function resetCalToken(personId) {
+	const token = crypto.randomBytes(24).toString('base64url');
+	db().prepare('UPDATE person SET cal_token = ? WHERE id = ?').run(token, personId);
+	return token;
+}
+export function personByCalToken(token) {
+	return db().prepare('SELECT id, name FROM person WHERE cal_token = ?').get(token) ?? null;
 }
 
 // ---------------------------------------------------------------- events

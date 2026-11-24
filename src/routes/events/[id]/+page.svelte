@@ -57,6 +57,7 @@
 			</form>
 		{/if}
 	{/if}
+	<p class="center-link"><a href="/events/{ev.id}/calendar.ics">Add to calendar</a></p>
 </section>
 
 {#if member || ev.chat_link}

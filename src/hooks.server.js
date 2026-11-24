@@ -41,6 +41,11 @@ export async function handle({ event, resolve }) {
 		}
 	}
 
+	// Calendar subscription feed: authenticated by the secret token in the path (calendar apps can't log in).
+	if (path.startsWith('/calendar/')) {
+		return withHeaders(await resolve(event));
+	}
+
 	if (!passwordConfigured()) {
 		return withHeaders(
 			new Response('Invites is not configured: set INVITES_PASSWORD (at least 8 characters).', { status: 503 })
