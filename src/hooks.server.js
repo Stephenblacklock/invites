@@ -15,8 +15,29 @@ function withHeaders(res) {
 	return res;
 }
 
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Replacement for SvelteKit's CSRF check. A request is refused only when the browser says it is
+ * cross-site: a real Origin that differs from ours, or Sec-Fetch-Site: cross-site. A missing or "null"
+ * Origin (in-app browsers/webviews) is allowed; the session cookie is SameSite=Lax so a cross-site
+ * post would not carry it anyway.
+ */
+function csrfBlocked(event) {
+	if (!MUTATING.has(event.request.method)) return false;
+	if (event.request.headers.get('sec-fetch-site') === 'cross-site') return true;
+	const origin = event.request.headers.get('origin');
+	if (!origin || origin === 'null') return false;
+	return origin !== event.url.origin;
+}
+
 export async function handle({ event, resolve }) {
 	const path = event.url.pathname;
+
+	// the bearer-token API is not cookie-based, so CSRF does not apply to it
+	if (!path.startsWith('/api/v1/') && csrfBlocked(event)) {
+		return withHeaders(new Response('Cross-site form submissions are forbidden', { status: 403 }));
+	}
 
 	if (path === '/healthz') {
 		try {

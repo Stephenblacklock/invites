@@ -1,6 +1,6 @@
 <script>
 	import { enhance } from '$app/forms';
-	import { bg, countdown, fmtDate, fmtRange, hue, isRange, priceLabel, rowAmount } from '#lib/format.js';
+	import { INTEREST, bg, countdown, fmtDate, fmtRange, hue, interestLabel, isRange, priceLabel, rowAmount } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 	import { onMount } from 'svelte';
 	import MediaEmbed from '#lib/components/MediaEmbed.svelte';
@@ -84,7 +84,7 @@
 	{#if going.length}
 		<ul class="member-list">
 			{#each going as p (p.id)}
-				<li><Avatars people={[p]} max={1} label={false} /> {p.name}</li>
+				<li><Avatars people={[p]} max={1} label={false} /> {p.name} <span class="meter" role="img" aria-label={interestLabel(p.interest)} title={interestLabel(p.interest)}>{#each [1, 2, 3] as n (n)}<i class:on={n <= p.interest}></i>{/each}</span></li>
 			{/each}
 		</ul>
 	{:else}
@@ -102,6 +102,18 @@
 
 	{#if !finished}
 		{#if member}
+			<form method="POST" action="?/interest" class="interest-pick" use:enhance={() => async ({ update }) => update({ reset: false })}>
+				<span class="k">How keen are you?</span>
+				<div class="interest-opts">
+					{#each INTEREST as o (o.level)}
+						<button name="level" value={o.level} class="interest-opt" class:on={data.myInterest === o.level} aria-pressed={data.myInterest === o.level}>
+							<span class="meter" aria-hidden="true">{#each [1, 2, 3] as n (n)}<i class:on={n <= o.level}></i>{/each}</span>
+							{o.label}
+						</button>
+					{/each}
+				</div>
+				{#if err('interest')}<p class="error" role="alert">{err('interest')}</p>{/if}
+			</form>
 			<form method="POST" action="?/leave" use:enhance>
 				<button class="btn ghost">Actually, count me out</button>
 			</form>

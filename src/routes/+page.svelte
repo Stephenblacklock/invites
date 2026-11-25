@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { bg, countdown, flags, fmtRange, hue } from '#lib/format.js';
+	import { INTEREST, bg, countdown, flags, fmtRange, hue } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 
 	let { data } = $props();
@@ -15,6 +15,8 @@
 	let toast = $state(null);
 	let toastTimer;
 	let failure = $state('');
+	let sheet = $state(null); // { event, level } after swiping interested
+	let sheetTimer;
 
 	const allTags = $derived([...new Set(deck.flatMap((e) => e.tags))].sort());
 	const visible = $derived(activeTag ? deck.filter((e) => e.tags.includes(activeTag)) : deck);
@@ -26,12 +28,12 @@
 		if (activeTag && !deck.some((e) => e.tags.includes(activeTag))) activeTag = null;
 	});
 
-	async function send(eventId, decision) {
+	async function send(eventId, decision, interest) {
 		try {
 			const res = await fetch('/api/swipe', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ eventId, decision })
+				body: JSON.stringify({ eventId, decision, interest })
 			});
 			if (!res.ok) throw new Error(String(res.status));
 			return true;
@@ -65,17 +67,35 @@
 			} else {
 				failure = '';
 				if (dir > 0) {
-					const others = ev.interested.length;
-					showToast({
-						text: others ? `You're in. ${others} other${others === 1 ? ' is' : 's are'} keen.` : "You're in. You're first!",
-						href: `/events/${ev.id}`
-					});
+					// saved as "keen" (2) already; the sheet lets them dial it up or down
+					sheet = { event: ev, level: 2 };
+					clearTimeout(sheetTimer);
+					sheetTimer = setTimeout(() => (sheet = null), 8000);
 				}
 			}
 		}, 220);
 	}
 
+	async function setLevel(n) {
+		if (!sheet) return;
+		const ev = sheet.event;
+		sheet = { event: ev, level: n };
+		clearTimeout(sheetTimer);
+		const ok = await send(ev.id, 'interest', n);
+		if (!ok) failure = "Couldn't save how keen you are.";
+		else {
+			failure = '';
+			const others = ev.interested.length;
+			sheet = null;
+			showToast({
+				text: others ? `You're in. ${others} other${others === 1 ? ' is' : 's are'} keen.` : "You're in. You're first!",
+				href: `/events/${ev.id}`
+			});
+		}
+	}
+
 	async function undo() {
+		sheet = null;
 		if (busy || !history.length) return;
 		const ev = history[history.length - 1];
 		history = history.slice(0, -1);
@@ -216,6 +236,22 @@
 {/if}
 
 {#if failure}<p class="error center" role="alert">{failure}</p>{/if}
+
+{#if sheet}
+	<div class="sheet" role="dialog" aria-label="How keen are you?">
+		<p class="sheet-title">You're in for <strong>{sheet.event.title}</strong>. How keen?</p>
+		<div class="interest-opts">
+			{#each INTEREST as o (o.level)}
+				<button class="interest-opt" class:on={sheet.level === o.level} onclick={() => setLevel(o.level)}>
+					<span class="meter" aria-hidden="true">{#each [1, 2, 3] as n (n)}<i class:on={n <= o.level}></i>{/each}</span>
+					{o.label}
+					<small>{o.hint}</small>
+				</button>
+			{/each}
+		</div>
+		<button class="linklike" onclick={() => (sheet = null)}>Skip</button>
+	</div>
+{/if}
 
 {#if toast}
 	<div class="toast" role="status">

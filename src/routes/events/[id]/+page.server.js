@@ -17,6 +17,7 @@ import {
 	markBooked,
 	releaseBooking,
 	setChatLink,
+	setInterest,
 	setSwipe,
 	toggleVote,
 	todayISO
@@ -35,6 +36,7 @@ export function load({ params, locals }) {
 	return {
 		event,
 		mine: getSwipe(me, event.id),
+		myInterest: event.interested.find((p) => p.id === me)?.interest ?? null,
 		options: listOptions(event.id, me),
 		comments: listComments(event.id),
 		canEdit: event.created_by === me,
@@ -53,6 +55,13 @@ export const actions = {
 	join: ({ params, locals }) => {
 		const event = load_event(params);
 		setSwipe(locals.person.id, event.id, 'interested');
+	},
+	interest: async ({ params, locals, request }) => {
+		const { event, isMember } = memberOnly(params, locals);
+		if (!isMember) return fail(403, { where: 'interest', error: 'Say you are interested first.' });
+		const level = Number((await request.formData()).get('level'));
+		if (!Number.isInteger(level) || level < 1 || level > 3) return fail(400, { where: 'interest', error: 'Pick 1, 2 or 3.' });
+		setInterest(locals.person.id, event.id, level);
 	},
 	leave: ({ params, locals }) => {
 		const event = load_event(params);

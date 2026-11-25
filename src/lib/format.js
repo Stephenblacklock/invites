@@ -100,3 +100,11 @@ export function flags(ev, today) {
 	else if (ev.booking_status === 'booking' && ev.booker_name) out.push({ text: `${ev.booker_name} is booking` });
 	return out;
 }
+
+/** Interest levels people can give an event. */
+export const INTEREST = [
+	{ level: 1, label: 'Curious', hint: 'Maybe, if it works out' },
+	{ level: 2, label: 'Keen', hint: 'Count me in' },
+	{ level: 3, label: "Can't wait", hint: 'Really want to go' }
+];
+export const interestLabel = (n) => INTEREST.find((i) => i.level === n)?.label ?? '';

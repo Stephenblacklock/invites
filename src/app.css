@@ -52,22 +52,24 @@ a { color: var(--accent); }
 /* ---------- shell ---------- */
 .shell { min-height: 100dvh; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; }
 .content { flex: 1; padding: 1rem 1rem 2rem; }
-.has-nav .content { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+.has-nav .content { padding-bottom: 1.5rem; }
 .topbar {
 	display: flex; align-items: center; justify-content: space-between;
 	padding: calc(0.75rem + env(safe-area-inset-top)) 1rem 0.25rem;
 }
 .wordmark { font-weight: 800; font-size: 1.25rem; text-decoration: none; color: var(--ink); letter-spacing: -0.02em; }
 .whoami { display: inline-flex; gap: 0.4rem; align-items: center; text-decoration: none; color: var(--ink); font-size: 0.9rem; }
+/* Sticky (not fixed) and opaque: in-app browsers (Messenger/Facebook) mishandle fixed + backdrop-filter bars,
+   leaving them under the webview toolbar or not tappable. */
 .tabbar {
-	position: fixed; left: 0; right: 0; bottom: 0; max-width: 560px; margin: 0 auto;
-	display: flex; background: color-mix(in srgb, var(--card) 92%, transparent);
-	backdrop-filter: blur(12px); border-top: 1px solid var(--line);
+	position: sticky; bottom: 0; z-index: 50; width: 100%;
+	display: flex; background: var(--card); border-top: 1px solid var(--line);
 	padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom));
 }
 .tabbar a {
-	flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
-	padding: 0.35rem 0; text-decoration: none; color: var(--muted); font-size: 0.75rem; font-weight: 600; border-radius: 12px;
+	flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+	min-height: 52px; padding: 0.35rem 0; text-decoration: none; color: var(--muted); font-size: 0.75rem; font-weight: 600; border-radius: 12px;
+	touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer;
 }
 .tabbar a.active { color: var(--accent); }
 .tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -281,3 +283,24 @@ input[type='date'] { min-height: 2.9rem; }
 .station-results { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-direction: column; gap: 0.35rem; }
 .station-results .btn { width: 100%; text-align: left; }
 .trip { list-style: none; padding: 0; margin: 0 0 0.4rem; display: flex; flex-direction: column; gap: 0.35rem; }
+
+/* ---------- interest meter (1-3) ---------- */
+.meter { display: inline-flex; gap: 3px; vertical-align: middle; }
+.meter i { width: 8px; height: 14px; border-radius: 3px; background: var(--line); display: block; }
+.meter i.on { background: var(--warm); }
+.interest-pick { margin: 0 0 0.9rem; }
+.interest-pick .k { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; }
+.interest-opts { display: flex; gap: 0.5rem; }
+.interest-opt {
+	flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.6rem 0.3rem;
+	background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 14px;
+	font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
+}
+.interest-opt small { font-weight: 400; font-size: 0.7rem; color: var(--muted); text-align: center; }
+.interest-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.sheet {
+	position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; max-width: 560px; margin: 0 auto;
+	background: var(--card); border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; box-shadow: var(--shadow);
+	padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom)); text-align: center;
+}
+.sheet-title { margin-bottom: 0.7rem; }

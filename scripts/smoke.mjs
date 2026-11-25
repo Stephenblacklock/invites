@@ -676,6 +676,48 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok(after.includes('Club film') && !after.includes('Film club'), 'deleting a club keeps its events');
 }
 
+// ------------------------------------------------------------ interest level + in-app browser posts
+{
+	const mk = async (name) => {
+		const c = new Client('10.0.7.' + (10 + Math.floor(Math.random() * 200)));
+		await c.post('/login', { password: PASSWORD });
+		await c.post('/who?/create', { name });
+		return c;
+	};
+	const ivy = await mk('Ivy Meter');
+	const jon = await mk('Jon Meter');
+	const made = await alice.post('/events/new', { title: 'Meter night', start_date: addDays(80) });
+	const path = loc(made);
+	const id = Number(path.split('/').pop());
+	const swipe = (c, body) => c.req('/api/swipe', { method: 'POST', json: { eventId: id, ...body } });
+	ok((await swipe(ivy, { decision: 'interested' })).status === 200, 'swiping right saves straight away');
+	ok((await (await ivy.req(path)).text()).includes('title="Keen"'), 'the default level is Keen');
+	ok((await swipe(ivy, { decision: 'interest', interest: 3 })).status === 200, 'the level can be raised afterwards');
+	ok((await (await jon.req(path)).text()).includes("title=\"Can't wait\""), 'others see the level next to the name');
+	ok((await swipe(ivy, { decision: 'interest', interest: 4 })).status === 400, 'a level outside 1 to 3 is refused');
+	ok((await swipe(jon, { decision: 'interest', interest: 1 })).status === 200 && !(await (await jon.req(path)).text()).includes('title="Curious"'), 'you cannot set a level before you are in');
+	const form = await ivy.post(path + '?/interest', { level: '1' });
+	ok(form.status < 400 && (await (await ivy.req(path)).text()).includes('title="Curious"'), 'the event page can change your own level');
+	ok((await jon.post(path + '?/interest', { level: '2' })).status === 403, 'non-members cannot set a level on the event page');
+	await swipe(ivy, { decision: 'not_interested' });
+	await swipe(ivy, { decision: 'interested' });
+	ok((await (await ivy.req(path)).text()).includes('title="Keen"'), 'coming back in resets to Keen');
+
+	// the CSRF check lets in-app browsers (missing or "null" Origin) through but still blocks cross-site posts
+	const post = (headers) =>
+		fetch(BASE + '/login', {
+			method: 'POST',
+			redirect: 'manual',
+			headers: { 'content-type': 'application/x-www-form-urlencoded', 'cf-connecting-ip': '10.0.8.' + Math.floor(Math.random() * 250), ...headers },
+			body: new URLSearchParams({ password: 'wrong' })
+		});
+	ok((await post({})).status === 401, 'a form post with no Origin is allowed (in-app browsers)');
+	ok((await post({ origin: 'null' })).status === 401, 'a form post with a "null" Origin is allowed');
+	ok((await post({ origin: BASE })).status === 401, 'a form post from our own origin is allowed');
+	ok((await post({ origin: 'https://evil.example' })).status === 403, 'a form post from another site is blocked');
+	ok((await post({ 'sec-fetch-site': 'cross-site' })).status === 403, 'a post the browser marks cross-site is blocked');
+}
+
 // ------------------------------------------------------------ travel times (fake TfL + geocoder)
 if (process.env.TRAVEL_TESTS !== '1') {
 	console.log('SKIP  travel-time checks (set TRAVEL_TESTS=1 and start the server with TFL_BASE/GEOCODE_BASE)');
