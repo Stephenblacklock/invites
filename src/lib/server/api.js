@@ -2,7 +2,7 @@
 // Disabled (404) unless INVITES_API_TOKEN is set. Acts as one fixed person (INVITES_API_PERSON).
 import crypto from 'node:crypto';
 import { clientIp, loginBlocked, recordLoginFailure, clearLoginFailures } from './auth.js';
-import { createPerson, findPersonByName, getPerson, listComments, listOptions } from './db.js';
+import { clubIdSet, createPerson, findPersonByName, getPerson, listClubs, listComments, listOptions } from './db.js';
 import { validateEvent } from '../validate.js';
 
 const MIN_TOKEN_LENGTH = 24;
@@ -50,6 +50,7 @@ export function shapeEvent(e, url) {
 		prices: (e.prices ?? []).map((r) => ({ label: r.label, amount: r.amount / 100, estimate: r.estimate })),
 		decide_by: e.decide_by ?? null,
 		capacity: e.capacity ?? null,
+		club: e.club_name ?? null,
 		media_link: e.media_link ?? null,
 		booking: e.booking_status ? { status: e.booking_status, by: e.booker_name, note: e.booking_note } : null,
 		created_by: e.creator_name,
@@ -76,12 +77,25 @@ export function shapeDetail(e, url, personId) {
 export function bodyToForm(body, base = {}) {
 	const errors = {};
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return { errors: { body: 'Expected a JSON object' } };
-	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'capacity'];
+	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'capacity', 'club'];
 	for (const k of Object.keys(body)) if (!allowed.includes(k) && !['image_url', 'prices', 'price_min', 'price_max'].includes(k)) errors[k] = 'Unknown field';
 	if ('image_url' in body && body.image_url !== null && typeof body.image_url !== 'string') errors.image_url = 'Must be a string or null';
 	const fd = new FormData();
 	for (const k of allowed) {
 		let v = k in body ? body[k] : base[k];
+		if (k === 'club') {
+			// clubs go by name in the API; the form holds the id
+			if (!(k in body)) v = base.club_id ? String(base.club_id) : '';
+			else if (v === null || v === '') v = '';
+			else if (typeof v === 'string') {
+				const hit = listClubs(0).find((c) => c.name.toLowerCase() === v.trim().toLowerCase());
+				if (hit) v = String(hit.id);
+				else {
+					errors.club = 'Unknown club: use a name from list_clubs';
+					v = '';
+				}
+			}
+		}
 		if (k === 'capacity' && typeof v === 'number') v = Number.isInteger(v) ? String(v) : 'x';
 		if (v === null || v === undefined) v = '';
 		if (k === 'tags' && Array.isArray(v)) {
@@ -142,7 +156,7 @@ function setPriceFields(fd, body, base, errors) {
 export function validateBody(body, { base, today, requireFuture }) {
 	const { fd, errors: shape } = bodyToForm(body, base);
 	if (!fd) return { ok: false, errors: shape };
-	const r = validateEvent(fd, { today, requireFuture });
+	const r = validateEvent(fd, { today, requireFuture, clubIds: clubIdSet() });
 	const errors = { ...shape, ...r.errors };
 	return { ok: Object.keys(errors).length === 0, errors, values: r.values };
 }

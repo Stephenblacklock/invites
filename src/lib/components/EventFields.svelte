@@ -1,7 +1,7 @@
 <script>
 	import { onMount, untrack } from 'svelte';
 	import ImageField from './ImageField.svelte';
-	let { values = {}, errors = {}, today, allowPast = false } = $props();
+	let { values = {}, errors = {}, today, allowPast = false, clubs = [] } = $props();
 	// stored as pence; while re-showing a rejected form the raw text comes back as a string
 	const money = (v) => (typeof v === 'number' ? String(v / 100) : (v ?? ''));
 	const MAX_ROWS = 8;
@@ -93,6 +93,19 @@
 	<span>Tags <em>(comma separated)</em></span>
 	<input name="tags" value={tagText} placeholder="festive, outdoors, food" />
 </label>
+
+{#if clubs.length}
+	<label>
+		<span>Club <em>(optional)</em></span>
+		<select name="club">
+			<option value="">No club</option>
+			{#each clubs as c (c.id)}
+				<option value={c.id} selected={String(values.club_id ?? values.club ?? '') === String(c.id)}>{c.name}</option>
+			{/each}
+		</select>
+		{#if errors.club}<small class="error">{errors.club}</small>{/if}
+	</label>
+{/if}
 
 <label>
 	<span>Trailer or playlist link <em>(optional)</em></span>

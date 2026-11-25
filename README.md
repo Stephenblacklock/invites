@@ -78,6 +78,15 @@ Notes:
   (npm would otherwise try to compile it from source).
 - SvelteKit 3: config lives in `vite.config.js`, and `#lib/...` replaces `$lib` (see `imports` in `package.json`).
 
+## Spots, clubs and prices
+
+- **Spots:** an event can have a limit (e.g. 3 tickets). The first people to say they're keen get the spots; anyone else can
+  still say they're keen and joins a waiting list, moving up when someone drops out.
+- **Clubs:** a club groups one kind of event (movie club, gigs). Anyone can start or join one and see who else is in it. Events
+  can belong to a club, but they stay open to everyone, club member or not.
+- **Prices:** rows per venue or ticket type, each optionally an estimate (`~`). Cards show the range.
+- **Settings** (your name, top right): calendar feed, travel stations, switch name, sign out.
+
 ## Ideas for later
 
 - Per-friend invite links instead of a shared password (real identity, revocable)
@@ -93,9 +102,14 @@ Set `INVITES_API_TOKEN` to enable it. Send `Authorization: Bearer <token>`. The 
 |---|---|
 | `list_events` | `GET /api/v1/events?scope=upcoming\|past\|all&q=text` |
 | `get_event` | `GET /api/v1/events/{id}` (adds date poll and comments) |
-| `create_event` | `POST /api/v1/events` JSON `title`, `start_date` (+ `description`, `location`, `tags[]`, `end_date`, `chat_link`). 409 on same title + start date |
+| `create_event` | `POST /api/v1/events` JSON `title`, `start_date` (+ `description`, `location`, `tags[]`, `end_date`, `chat_link`, `image_url`, `decide_by`, `media_link`, `capacity`, `club`, `prices[]`). 409 on same title + start date |
 | `update_event` | `PATCH /api/v1/events/{id}` (only events the API person created) |
 | `my_plans` | `GET /api/v1/plans` |
+| `list_clubs` | `GET /api/v1/clubs` (names, members; put an event in a club by name with `club`) |
+| `preview_link` | `POST /api/v1/link-preview` (suggest event fields from a public page; nothing is saved) |
+
+`prices` is a list of `{label, amount (GBP), estimate}` rows, one per venue or ticket type; `price_min` / `price_max` still work
+as a shortcut for a single price or a range. `capacity` limits how many people can go; the rest wait in order (`waiting_list`).
 
 It cannot swipe, join, comment or delete. Failed token attempts share the login rate limiter (5 per IP per 15 minutes).
 

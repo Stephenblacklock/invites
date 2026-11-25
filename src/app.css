@@ -270,6 +270,7 @@ input[type='date'] { min-height: 2.9rem; }
 .event-main .flag { align-self: flex-start; }
 .flag { padding: 0.1rem 0.55rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 0.74rem; font-weight: 700; }
 .flag.urgent { background: #fde7d9; color: #b4410b; }
+.flag.club { background: transparent; border: 1px solid var(--accent); }
 .flag.good { background: #dff5e3; color: #1a7a34; }
 .media iframe { width: 100%; border: 0; border-radius: 12px; aspect-ratio: 16 / 9; }
 .media iframe.spotify { aspect-ratio: auto; }

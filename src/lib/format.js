@@ -78,6 +78,7 @@ export function rowAmount(r) {
 /** Small status flags shown on cards and rows: decide-by date and ticket booking. */
 export function flags(ev, today) {
 	const out = [];
+	if (ev.club_name) out.push({ text: ev.club_name, club: true });
 	const price = priceLabel(ev);
 	if (price) out.push({ text: price, price: true });
 	if (ev.travel?.length) {

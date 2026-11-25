@@ -85,9 +85,9 @@ export function cleanLink(raw) {
 
 /**
  * @param {FormData} fd
- * @param {{ today: string, requireFuture: boolean }} opts
+ * @param {{ today: string, requireFuture: boolean, clubIds?: Set<number> }} opts  clubIds: the clubs that exist, so a bad club is refused
  */
-export function validateEvent(fd, { today, requireFuture }) {
+export function validateEvent(fd, { today, requireFuture, clubIds = new Set() }) {
 	const get = (k) => (fd.get(k) ?? '').toString().trim();
 	const errors = {};
 	const title = get('title');
@@ -100,6 +100,8 @@ export function validateEvent(fd, { today, requireFuture }) {
 	const priceRows = readPriceRows(fd, errors);
 	const media = get('media_link');
 	const cap = parseCapacity(get('capacity'));
+	const clubRaw = get('club');
+	const clubId = clubRaw ? Number(clubRaw) : null;
 
 	if (!title) errors.title = 'Give it a title';
 	else if (title.length > 80) errors.title = 'Keep the title under 80 characters';
@@ -117,6 +119,7 @@ export function validateEvent(fd, { today, requireFuture }) {
 		else if (requireFuture && decideBy < today) errors.decide_by = 'That date has already passed';
 	}
 	if (cap === undefined) errors.capacity = 'Enter a whole number from 1 to 500, or leave it empty';
+	if (clubRaw && !(Number.isInteger(clubId) && clubIds.has(clubId))) errors.club = 'Pick one of the clubs in the list';
 	if (media && !parseMedia(media)) errors.media_link = 'Use a YouTube or Spotify link';
 	if (!link.ok) errors.chat_link = 'Enter a full http(s) link, e.g. a WhatsApp invite';
 
@@ -131,6 +134,8 @@ export function validateEvent(fd, { today, requireFuture }) {
 		decide_by: decideBy || null,
 		prices: priceRows,
 		...priceSummary(priceRows),
+		club_id: clubRaw && errors.club === undefined ? clubId : null,
+		club: clubRaw,
 		capacity: cap === undefined ? get('capacity') : cap,
 		media_link: media ? (parseMedia(media)?.link ?? null) : null
 	};

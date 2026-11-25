@@ -619,6 +619,63 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok((await clr.json()).event.capacity === null, 'API can clear the limit with null');
 }
 
+// ------------------------------------------------------------ clubs
+{
+	const mk = async (name) => {
+		const c = new Client('10.0.6.' + (10 + Math.floor(Math.random() * 200)));
+		await c.post('/login', { password: PASSWORD });
+		await c.post('/who?/create', { name });
+		return c;
+	};
+	const eve = await mk('Eve Club');
+	const finn = await mk('Finn Club');
+	const gus = await mk('Gus Club');
+	ok((await alice.post('/clubs?/create', { name: 'x' })).status === 400, 'a one-letter club name is refused');
+	const created = await alice.post('/clubs?/create', { name: 'Movie club', description: 'New releases and the odd classic' });
+	const clubPath = loc(created);
+	ok(created.status === 303 && /^\/clubs\/\d+$/.test(clubPath ?? ''), 'a club can be started');
+	const clubId = clubPath.split('/').pop();
+	const dupe = await gus.post('/clubs?/create', { name: 'movie CLUB' });
+	ok(dupe.status === 400 && (await dupe.text()).includes('already a club'), 'club names are unique, ignoring case');
+	let list = await (await eve.req('/clubs')).text();
+	ok(list.includes('Movie club') && list.includes('1 member'), 'the club list shows the club and its members');
+	await eve.post('/clubs?/join', { club: clubId });
+	let page = await (await gus.req(clubPath)).text();
+	ok(page.includes('Alice') && page.includes('Eve Club'), 'members are visible on the club page');
+	ok((await gus.req(clubPath)).status === 200 && page.includes('Join this club'), 'someone not in the club is offered Join');
+
+	const made = await alice.post('/events/new', { title: 'Club film', start_date: addDays(70), club: clubId });
+	const filmPath = loc(made);
+	ok(made.status === 303 && !!filmPath, 'an event can be put in a club');
+	ok((await (await alice.req(filmPath)).text()).includes('Movie club'), 'the event page names the club');
+	ok((await (await alice.req(clubPath)).text()).includes('Club film'), 'the club page lists its upcoming events');
+	ok((await alice.post('/events/new', { title: 'Bad club', start_date: addDays(70), club: '99999' })).status === 400, 'an unknown club is refused');
+	ok((await finn.req('/')).status === 200 && (await deckHtml(finn)).includes('Club film'), 'club events are still open to people who are not in the club');
+	ok((await (await alice.req(filmPath + '/edit')).text()).includes('selected'), 'the edit form preselects the club');
+
+	const api = await (await call('/api/v1/clubs')).json();
+	ok(api.clubs.some((c) => c.name === 'Movie club' && c.members.includes('Alice') && c.members.includes('Eve Club')), 'API lists clubs with their members');
+	const apiMake = await call('/api/v1/events', { method: 'POST', body: { title: 'Api club film', start_date: addDays(71), club: 'movie club' } });
+	const apiEv = (await apiMake.json()).event;
+	ok(apiMake.status === 201 && apiEv.club === 'Movie club', 'API puts an event in a club by name');
+	ok((await call('/api/v1/events', { method: 'POST', body: { title: 'Nope', start_date: addDays(71), club: 'No such club' } })).status === 400, 'API refuses an unknown club');
+	const keep = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { title: 'Api club film 2' } });
+	ok((await keep.json()).event.club === 'Movie club', 'API update keeps the club when it is not sent');
+	const out = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { club: null } });
+	ok((await out.json()).event.club === null, 'API can take an event out of its club with null');
+
+	ok((await gus.post(clubPath + '?/delete', {})).status === 403, 'only the person who started a club can delete it');
+	ok((await gus.post(clubPath + '?/save', { name: 'Hijacked' })).status === 403, 'only the person who started a club can edit it');
+	const saved = await alice.post(clubPath + '?/save', { name: 'Film club', description: 'Cinema nights' });
+	ok(saved.status === 200 && (await (await alice.req(clubPath)).text()).includes('Film club'), 'the creator can rename the club');
+	await eve.post(clubPath + '?/leave', {});
+	ok(!(await (await alice.req(clubPath)).text()).includes('Eve Club'), 'leaving a club removes you from the members');
+	const del = await alice.post(clubPath + '?/delete', {});
+	ok(del.status === 303 && loc(del) === '/clubs', 'the creator can delete the club');
+	const after = await (await alice.req(filmPath)).text();
+	ok(after.includes('Club film') && !after.includes('Film club'), 'deleting a club keeps its events');
+}
+
 // ------------------------------------------------------------ travel times (fake TfL + geocoder)
 if (process.env.TRAVEL_TESTS !== '1') {
 	console.log('SKIP  travel-time checks (set TRAVEL_TESTS=1 and start the server with TFL_BASE/GEOCODE_BASE)');

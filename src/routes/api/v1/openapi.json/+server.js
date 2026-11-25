@@ -26,6 +26,7 @@ const event = {
 		decide_by: { type: 'string', format: 'date', nullable: true, description: 'Date by which the group should decide (e.g. tickets sell out)' },
 		capacity: { type: 'integer', nullable: true, description: 'Maximum number of people (spots), or null for no limit' },
 		media_link: { type: 'string', nullable: true, description: 'YouTube or Spotify link shown as a player on the event page' },
+		club: { type: 'string', nullable: true, description: 'Name of the club this event belongs to, if any' },
 		booking: { type: 'object', nullable: true, description: 'Who is sorting tickets (read-only, set in the app)', properties: { status: { type: 'string', enum: ['booking', 'booked'] }, by: { type: 'string' }, note: { type: 'string', nullable: true } } },
 		created_by: { type: 'string' },
 		image: { type: 'string', nullable: true, description: 'Banner picture URL (needs the friends\' session to view)' },
@@ -48,6 +49,7 @@ const input = {
 	price_max: { type: 'number', nullable: true, description: 'Top of a price range in GBP; needs price_min and must not be lower. null clears.' },
 	capacity: { type: 'integer', nullable: true, minimum: 1, maximum: 500, description: 'Spots: how many people can go (e.g. 3 tickets). Others can still say they are keen and wait in order. null clears.' },
 	decide_by: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, must be before the event ends. null clears it.' },
+	club: { type: 'string', nullable: true, description: 'Name of an existing club to put the event in (see list_clubs), e.g. "Movie club". null removes it from its club.' },
 	media_link: { type: 'string', nullable: true, description: 'A YouTube video/playlist or Spotify track/album/playlist/artist link (e.g. a trailer for a film, a playlist for a gig). null clears it.' },
 	image_url: { type: 'string', nullable: true, description: 'Direct https link to a JPEG, PNG, WebP or GIF (max 8 MB). The server downloads and keeps its own copy as the event banner. On update, null removes the banner.' }
 };
@@ -87,6 +89,16 @@ export function GET({ url }) {
 					summary: 'Create an event (the API user is marked interested). Rejects finished events and duplicates (same title and start date).',
 					requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['title', 'start_date'], properties: input, additionalProperties: false } } } },
 					responses: { 201: ok({ type: 'object', properties: { event: event } }, 'Created'), 400: err, 401: err, 409: err }
+				}
+			},
+			'/api/v1/clubs': {
+				get: {
+					operationId: 'list_clubs',
+					summary: 'List clubs with their members. Events can be put in a club by name.',
+					responses: {
+						200: ok({ type: 'object', properties: { count: { type: 'integer' }, clubs: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, members: { type: 'array', items: { type: 'string' } }, upcoming_events: { type: 'integer' } } } } } }),
+						401: err
+					}
 				}
 			},
 			'/api/v1/events/{id}': {

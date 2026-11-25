@@ -61,6 +61,9 @@
 			{priceLabel(ev)}{ev.price_min === 0 && ev.price_max == null ? '' : ' per person'}{ev.price_estimate ? ' (estimate)' : ''}
 		</p>
 	{/if}
+	{#if ev.club_name}
+		<p class="meta"><span class="k">Club</span> <a href="/clubs/{ev.club_id}">{ev.club_name}</a></p>
+	{/if}
 	{#if ev.decide_by && ev.decide_by >= data.today}
 		<p class="meta"><span class="k">Decide by</span> {fmtDate(ev.decide_by, data.today)}</p>
 	{/if}

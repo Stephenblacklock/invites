@@ -105,7 +105,23 @@ const MIGRATIONS = [
 	INSERT INTO event_price (event_id, label, amount, position)
 		SELECT id, CASE WHEN price_max IS NULL THEN '' ELSE 'From' END, price_min, 0 FROM event WHERE price_min IS NOT NULL;
 	INSERT INTO event_price (event_id, label, amount, position)
-		SELECT id, 'Up to', price_max, 1 FROM event WHERE price_max IS NOT NULL;`
+		SELECT id, 'Up to', price_max, 1 FROM event WHERE price_max IS NOT NULL;`,
+	// v9: clubs (open to everyone to join; events can belong to one)
+	`CREATE TABLE club (
+		id INTEGER PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		description TEXT NOT NULL DEFAULT '',
+		created_by INTEGER REFERENCES person(id) ON DELETE SET NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE TABLE club_member (
+		club_id INTEGER NOT NULL REFERENCES club(id) ON DELETE CASCADE,
+		person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (club_id, person_id)
+	);
+	CREATE INDEX club_member_person ON club_member (person_id);
+	ALTER TABLE event ADD COLUMN club_id INTEGER REFERENCES club(id) ON DELETE SET NULL;`
 ];
 
 let _db;
@@ -234,6 +250,12 @@ function hydrate(rows) {
 		const q = bookerIds.map(() => '?').join(',');
 		for (const b of db().prepare(`SELECT id, name FROM person WHERE id IN (${q})`).all(...bookerIds)) bookers.set(b.id, b.name);
 	}
+	const clubNames = new Map();
+	const clubIds = [...new Set(rows.map((r) => r.club_id).filter(Boolean))];
+	if (clubIds.length) {
+		const q = clubIds.map(() => '?').join(',');
+		for (const c of db().prepare(`SELECT id, name FROM club WHERE id IN (${q})`).all(...clubIds)) clubNames.set(c.id, c.name);
+	}
 	const priceRows = new Map();
 	for (const pr of db()
 		.prepare(`SELECT event_id, label, amount, estimate FROM event_price WHERE event_id IN (${marks}) ORDER BY position, id`)
@@ -250,6 +272,7 @@ function hydrate(rows) {
 			tags: splitTags(r.tags),
 			interested: all.map((p, i) => ({ ...p, waiting: i >= cap })),
 			prices: priceRows.get(r.id) ?? [],
+			club_name: clubNames.get(r.club_id) ?? null,
 			going_count: Math.min(all.length, cap),
 			waiting_count: Math.max(0, all.length - cap),
 			booker_name: bookers.get(r.booker_id) ?? null
@@ -271,10 +294,10 @@ export function createEvent(v, personId) {
 	return d.transaction(() => {
 		const info = d
 			.prepare(
-				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, price_min, price_max, price_estimate, capacity, created_by)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, price_min, price_max, price_estimate, capacity, club_id, created_by)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, personId);
+			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, v.club_id ?? null, personId);
 		const id = Number(info.lastInsertRowid);
 		setPrices(id, v.prices);
 		setSwipe(personId, id, 'interested');
@@ -294,10 +317,10 @@ export function updateEvent(id, v) {
 	db()
 		.prepare(
 			`UPDATE event SET title = ?, description = ?, location = ?, tags = ?, start_date = ?, end_date = ?, chat_link = ?,
-			   decide_by = ?, media_link = ?, price_min = ?, price_max = ?, price_estimate = ?, capacity = ?
+			   decide_by = ?, media_link = ?, price_min = ?, price_max = ?, price_estimate = ?, capacity = ?, club_id = ?
 			 WHERE id = ?`
 		)
-		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, id);
+		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, v.club_id ?? null, id);
 	setPrices(id, v.prices);
 	// Poll options that now fall outside the event's dates are no longer valid
 	db()
@@ -311,6 +334,93 @@ export function setImage(id, name) {
 
 export function setChatLink(id, link) {
 	db().prepare('UPDATE event SET chat_link = ? WHERE id = ?').run(link, id);
+}
+
+// ---------------------------------------------------------------- clubs
+const clubRow = (r, personId) => ({
+	id: r.id,
+	name: r.name,
+	description: r.description,
+	created_by: r.created_by,
+	creator_name: r.creator_name ?? null,
+	members: db()
+		.prepare('SELECT p.id, p.name FROM club_member m JOIN person p ON p.id = m.person_id WHERE m.club_id = ? ORDER BY m.created_at, p.id')
+		.all(r.id),
+	upcoming: r.upcoming ?? 0
+});
+
+function withJoined(club, personId) {
+	return { ...club, joined: club.members.some((m) => m.id === personId) };
+}
+
+/** All clubs, with members and the number of upcoming events. */
+export function listClubs(personId, today = todayISO()) {
+	const rows = db()
+		.prepare(
+			`SELECT c.*, p.name AS creator_name,
+			   (SELECT COUNT(*) FROM event e WHERE e.club_id = c.id AND COALESCE(e.end_date, e.start_date) >= ?) AS upcoming
+			 FROM club c LEFT JOIN person p ON p.id = c.created_by ORDER BY c.name COLLATE NOCASE`
+		)
+		.all(today);
+	return rows.map((r) => withJoined(clubRow(r), personId));
+}
+
+export function getClub(id, personId, today = todayISO()) {
+	const r = db()
+		.prepare(
+			`SELECT c.*, p.name AS creator_name,
+			   (SELECT COUNT(*) FROM event e WHERE e.club_id = c.id AND COALESCE(e.end_date, e.start_date) >= ?) AS upcoming
+			 FROM club c LEFT JOIN person p ON p.id = c.created_by WHERE c.id = ?`
+		)
+		.get(today, id);
+	return r ? withJoined(clubRow(r), personId) : null;
+}
+
+export function clubIdSet() {
+	return new Set(db().prepare('SELECT id FROM club').all().map((r) => r.id));
+}
+
+/** @returns {{id:number}|{error:string}} */
+export function createClub(name, description, personId) {
+	const d = db();
+	if (d.prepare('SELECT 1 FROM club WHERE name = ? COLLATE NOCASE').get(name)) return { error: 'There is already a club with that name' };
+	return d.transaction(() => {
+		const id = Number(d.prepare('INSERT INTO club (name, description, created_by) VALUES (?, ?, ?)').run(name, description, personId).lastInsertRowid);
+		d.prepare('INSERT INTO club_member (club_id, person_id) VALUES (?, ?)').run(id, personId);
+		return { id };
+	})();
+}
+
+/** @returns {{ok:true}|{error:string}} */
+export function updateClub(id, name, description) {
+	const d = db();
+	const clash = d.prepare('SELECT id FROM club WHERE name = ? COLLATE NOCASE AND id <> ?').get(name, id);
+	if (clash) return { error: 'There is already a club with that name' };
+	d.prepare('UPDATE club SET name = ?, description = ? WHERE id = ?').run(name, description, id);
+	return { ok: true };
+}
+
+export function deleteClub(id) {
+	db().prepare('DELETE FROM club WHERE id = ?').run(id);
+}
+
+export function joinClub(clubId, personId) {
+	db().prepare('INSERT OR IGNORE INTO club_member (club_id, person_id) VALUES (?, ?)').run(clubId, personId);
+}
+
+export function leaveClub(clubId, personId) {
+	db().prepare('DELETE FROM club_member WHERE club_id = ? AND person_id = ?').run(clubId, personId);
+}
+
+/** Upcoming events in a club, soonest first. */
+export function eventsForClub(clubId, today) {
+	const rows = db()
+		.prepare(
+			`SELECT e.*, p.name AS creator_name FROM event e JOIN person p ON p.id = e.created_by
+			 WHERE e.club_id = ? AND COALESCE(e.end_date, e.start_date) >= ? ORDER BY e.start_date, e.id`
+		)
+		.all(clubId, today);
+	return hydrate(rows);
 }
 
 // ---------------------------------------------------------------- ticket booking
