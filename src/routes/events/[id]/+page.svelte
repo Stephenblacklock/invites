@@ -1,6 +1,6 @@
 <script>
 	import { enhance } from '$app/forms';
-	import { bg, countdown, fmtDate, fmtRange, hue, isRange, priceLabel } from '#lib/format.js';
+	import { bg, countdown, fmtDate, fmtRange, hue, isRange, priceLabel, rowAmount } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 	import { onMount } from 'svelte';
 	import MediaEmbed from '#lib/components/MediaEmbed.svelte';
@@ -42,8 +42,24 @@
 	{#if ev.location}
 		<p class="meta"><span class="k">Where</span> {ev.location}</p>
 	{/if}
-	{#if priceLabel(ev)}
-		<p class="meta"><span class="k">Price</span> {priceLabel(ev)}{ev.price_min === 0 && ev.price_max == null ? '' : ' per person'}</p>
+	{#if ev.prices.length > 1 || ev.prices[0]?.label}
+		<div class="meta">
+			<span class="k">Price</span> per person ({priceLabel(ev)})
+			<ul class="price-list">
+				{#each ev.prices as r, i (i)}
+					<li>
+						<span>{r.label || 'Ticket'}</span>
+						<strong>{rowAmount(r)}</strong>
+						{#if r.estimate}<em class="muted">estimate</em>{/if}
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{:else if priceLabel(ev)}
+		<p class="meta">
+			<span class="k">Price</span>
+			{priceLabel(ev)}{ev.price_min === 0 && ev.price_max == null ? '' : ' per person'}{ev.price_estimate ? ' (estimate)' : ''}
+		</p>
 	{/if}
 	{#if ev.decide_by && ev.decide_by >= data.today}
 		<p class="meta"><span class="k">Decide by</span> {fmtDate(ev.decide_by, data.today)}</p>

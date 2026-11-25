@@ -1,8 +1,27 @@
 <script>
+	import { onMount, untrack } from 'svelte';
 	import ImageField from './ImageField.svelte';
 	let { values = {}, errors = {}, today, allowPast = false } = $props();
 	// stored as pence; while re-showing a rejected form the raw text comes back as a string
 	const money = (v) => (typeof v === 'number' ? String(v / 100) : (v ?? ''));
+	const MAX_ROWS = 8;
+	const blank = () => ({ label: '', amount: '', estimate: false });
+	let rows = $state(
+		untrack(() =>
+			Array.isArray(values.prices) && values.prices.length
+				? values.prices.map((r) => ({ label: r.label ?? '', amount: money(r.amount), estimate: !!r.estimate }))
+				: [blank()]
+		)
+	);
+	// the "fill from a link" box hands over any prices it found
+	onMount(() => {
+		const onPrices = (e) => {
+			const got = (e.detail ?? []).slice(0, MAX_ROWS).map((r) => ({ label: r.label ?? '', amount: String(r.amount ?? ''), estimate: !!r.estimate }));
+			if (got.length) rows = got;
+		};
+		window.addEventListener('invites:prices', onPrices);
+		return () => window.removeEventListener('invites:prices', onPrices);
+	});
 	const tagText = $derived(Array.isArray(values.tags) ? values.tags.join(', ') : (values.tags ?? ''));
 </script>
 
@@ -38,18 +57,23 @@
 		{#if errors.end_date}<small class="error">{errors.end_date}</small>{/if}
 	</label>
 </div>
-<div class="row2">
-	<label>
-		<span>Price per person <em>(£, optional)</em></span>
-		<input name="price_min" inputmode="decimal" value={money(values.price_min)} placeholder="45, or free" />
-		{#if errors.price_min}<small class="error">{errors.price_min}</small>{/if}
-	</label>
-	<label>
-		<span>Up to <em>(optional)</em></span>
-		<input name="price_max" inputmode="decimal" value={money(values.price_max)} placeholder="60" />
-		{#if errors.price_max}<small class="error">{errors.price_max}</small>{/if}
-	</label>
-</div>
+<fieldset class="prices">
+	<legend>Price per person <em>(£, optional)</em></legend>
+	{#each rows as row, i (i)}
+		<div class="price-row">
+			<input name="price_label_{i}" bind:value={row.label} maxlength="40" placeholder={i === 0 ? 'Curzon, or Standing' : 'Another venue or ticket'} aria-label="What this price is for" />
+			<input name="price_amount_{i}" bind:value={row.amount} inputmode="decimal" placeholder="18, or free" aria-label="Price in pounds" />
+			<label class="est"><input type="checkbox" name="price_estimate_{i}" value="1" bind:checked={row.estimate} /> Estimate</label>
+			{#if rows.length > 1}
+				<button type="button" class="btn ghost x" onclick={() => rows.splice(i, 1)} aria-label="Remove this price">✕</button>
+			{/if}
+		</div>
+		{#if errors['price_' + i]}<small class="error">{errors['price_' + i]}</small>{/if}
+	{/each}
+	{#if errors.prices}<small class="error">{errors.prices}</small>{/if}
+	<button type="button" class="btn" onclick={() => rows.push(blank())} disabled={rows.length >= MAX_ROWS}>Add another price</button>
+	<small class="hint">Different venues or ticket types each get a row. Cards show the range.</small>
+</fieldset>
 
 <label>
 	<span>Spots <em>(optional)</em></span>

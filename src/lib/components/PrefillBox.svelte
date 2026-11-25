@@ -6,7 +6,7 @@
 	let message = $state('');
 	let failed = $state(false);
 
-	const NAMES = ['title', 'description', 'location', 'start_date', 'end_date', 'price_min', 'price_max', 'image_url'];
+	const NAMES = ['title', 'description', 'location', 'start_date', 'end_date', 'image_url'];
 
 	function setField(name, value) {
 		const el = document.querySelector(`.card-form [name="${name}"]`);
@@ -34,6 +34,14 @@
 				return;
 			}
 			const got = NAMES.filter((n) => setField(n, data.info[n]));
+			const info = data.info;
+			if (info.price_min !== undefined) {
+				const rows = info.price_max !== undefined
+					? [{ label: 'From', amount: info.price_min }, { label: 'Up to', amount: info.price_max }]
+					: [{ label: '', amount: info.price_min }];
+				window.dispatchEvent(new CustomEvent('invites:prices', { detail: rows }));
+				got.push('price_min');
+			}
 			const missing = ['start_date', 'location'].filter((n) => !got.includes(n));
 			message =
 				`Filled in from ${data.source}.` +

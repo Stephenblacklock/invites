@@ -62,11 +62,17 @@ export function bg(image) {
 }
 
 const pounds = (pence) => '£' + (pence % 100 ? (pence / 100).toFixed(2) : String(pence / 100));
-/** '£45', '£30–£60', 'Free' or null when no price is set. Prices are pence. */
+/** '£45', '£30–£60', '~£45' (estimate), 'Free' or null when no price is set. Prices are pence. */
 export function priceLabel(ev) {
 	if (ev.price_min == null) return null;
 	if (ev.price_min === 0 && ev.price_max == null) return 'Free';
-	return ev.price_max != null ? `${pounds(ev.price_min)}–${pounds(ev.price_max)}` : pounds(ev.price_min);
+	const tilde = ev.price_estimate ? '~' : '';
+	return ev.price_max != null ? `${tilde}${pounds(ev.price_min)}–${pounds(ev.price_max)}` : tilde + pounds(ev.price_min);
+}
+
+/** One price row for the event page: '£18', '~£12.99' or 'Free'. */
+export function rowAmount(r) {
+	return r.amount === 0 ? 'Free' : (r.estimate ? '~' : '') + pounds(r.amount);
 }
 
 /** Small status flags shown on cards and rows: decide-by date and ticket booking. */

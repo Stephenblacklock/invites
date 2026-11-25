@@ -46,6 +46,8 @@ export function shapeEvent(e, url) {
 		chat_link: e.chat_link,
 		price_min: e.price_min == null ? null : e.price_min / 100,
 		price_max: e.price_max == null ? null : e.price_max / 100,
+		price_estimate: !!e.price_estimate,
+		prices: (e.prices ?? []).map((r) => ({ label: r.label, amount: r.amount / 100, estimate: r.estimate })),
 		decide_by: e.decide_by ?? null,
 		capacity: e.capacity ?? null,
 		media_link: e.media_link ?? null,
@@ -74,17 +76,12 @@ export function shapeDetail(e, url, personId) {
 export function bodyToForm(body, base = {}) {
 	const errors = {};
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return { errors: { body: 'Expected a JSON object' } };
-	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'price_min', 'price_max', 'capacity'];
-	for (const k of Object.keys(body)) if (!allowed.includes(k) && k !== 'image_url') errors[k] = 'Unknown field';
+	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'capacity'];
+	for (const k of Object.keys(body)) if (!allowed.includes(k) && !['image_url', 'prices', 'price_min', 'price_max'].includes(k)) errors[k] = 'Unknown field';
 	if ('image_url' in body && body.image_url !== null && typeof body.image_url !== 'string') errors.image_url = 'Must be a string or null';
 	const fd = new FormData();
 	for (const k of allowed) {
 		let v = k in body ? body[k] : base[k];
-		if (k === 'price_min' || k === 'price_max') {
-			// the API speaks pounds (numbers); the database holds pence
-			if (!(k in body) && typeof v === 'number') v = v / 100;
-			if (typeof v === 'number') v = Number.isFinite(v) ? String(v) : 'x';
-		}
 		if (k === 'capacity' && typeof v === 'number') v = Number.isInteger(v) ? String(v) : 'x';
 		if (v === null || v === undefined) v = '';
 		if (k === 'tags' && Array.isArray(v)) {
@@ -97,7 +94,49 @@ export function bodyToForm(body, base = {}) {
 		}
 		fd.set(k, v);
 	}
+	setPriceFields(fd, body, base, errors);
 	return { fd, errors };
+}
+
+/**
+ * The API speaks pounds (numbers); the form and database hold pence. `prices` (a list of {label, amount, estimate})
+ * wins; price_min / price_max still work as a shortcut for a single price or a range; sending neither keeps the existing rows.
+ */
+function setPriceFields(fd, body, base, errors) {
+	const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
+	let rows;
+	if ('prices' in body) {
+		if (body.prices === null) rows = [];
+		else if (!Array.isArray(body.prices)) {
+			errors.prices = 'Must be a list of {label, amount, estimate} or null';
+			return;
+		} else {
+			rows = [];
+			for (const [i, r] of body.prices.entries()) {
+				if (!r || typeof r !== 'object' || Array.isArray(r) || num(r.amount) === undefined || (r.label != null && typeof r.label !== 'string') || (r.estimate != null && typeof r.estimate !== 'boolean')) {
+					errors.prices = `Price ${i + 1} needs a numeric amount (GBP), and optionally a text label and a true/false estimate`;
+					return;
+				}
+				rows.push({ label: r.label ?? '', amount: r.amount, estimate: !!r.estimate });
+			}
+		}
+	} else if ('price_min' in body || 'price_max' in body) {
+		const get = (k, baseV) => (k in body ? body[k] : baseV == null ? null : baseV / 100);
+		const lo = get('price_min', base.price_min);
+		const hi = get('price_max', base.price_max);
+		if (lo !== null && num(lo) === undefined) return void (errors.price_min = 'Must be a number of pounds (or null)');
+		if (hi !== null && num(hi) === undefined) return void (errors.price_max = 'Must be a number of pounds (or null)');
+		if (lo === null && hi !== null) return void (errors.price_min = 'Add the lowest price too');
+		if (lo !== null && hi !== null && hi < lo) return void (errors.price_max = 'The top price is below the lowest price');
+		rows = lo === null ? [] : hi === null || hi === lo ? [{ label: '', amount: lo, estimate: !!base.price_estimate }] : [{ label: 'From', amount: lo, estimate: !!base.price_estimate }, { label: 'Up to', amount: hi, estimate: !!base.price_estimate }];
+	} else {
+		rows = (base.prices ?? []).map((r) => ({ label: r.label, amount: r.amount / 100, estimate: r.estimate }));
+	}
+	rows.forEach((r, i) => {
+		fd.set('price_label_' + i, r.label);
+		fd.set('price_amount_' + i, String(r.amount));
+		if (r.estimate) fd.set('price_estimate_' + i, '1');
+	});
 }
 
 export function validateBody(body, { base, today, requireFuture }) {

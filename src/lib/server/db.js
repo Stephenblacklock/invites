@@ -89,7 +89,23 @@ const MIGRATIONS = [
 		fetched_at INTEGER NOT NULL
 	);`,
 	// v7: optional limit on how many people can go (the rest wait in order)
-	`ALTER TABLE event ADD COLUMN capacity INTEGER;`
+	`ALTER TABLE event ADD COLUMN capacity INTEGER;`,
+	// v8: price rows (several venues or ticket types, each optionally an estimate).
+	// event.price_min / price_max / price_estimate stay as a summary for the cards.
+	`ALTER TABLE event ADD COLUMN price_estimate INTEGER NOT NULL DEFAULT 0;
+	CREATE TABLE event_price (
+		id INTEGER PRIMARY KEY,
+		event_id INTEGER NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+		label TEXT NOT NULL DEFAULT '',
+		amount INTEGER NOT NULL,
+		estimate INTEGER NOT NULL DEFAULT 0,
+		position INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE INDEX event_price_event ON event_price (event_id, position);
+	INSERT INTO event_price (event_id, label, amount, position)
+		SELECT id, CASE WHEN price_max IS NULL THEN '' ELSE 'From' END, price_min, 0 FROM event WHERE price_min IS NOT NULL;
+	INSERT INTO event_price (event_id, label, amount, position)
+		SELECT id, 'Up to', price_max, 1 FROM event WHERE price_max IS NOT NULL;`
 ];
 
 let _db;
@@ -218,6 +234,13 @@ function hydrate(rows) {
 		const q = bookerIds.map(() => '?').join(',');
 		for (const b of db().prepare(`SELECT id, name FROM person WHERE id IN (${q})`).all(...bookerIds)) bookers.set(b.id, b.name);
 	}
+	const priceRows = new Map();
+	for (const pr of db()
+		.prepare(`SELECT event_id, label, amount, estimate FROM event_price WHERE event_id IN (${marks}) ORDER BY position, id`)
+		.all(...ids)) {
+		if (!priceRows.has(pr.event_id)) priceRows.set(pr.event_id, []);
+		priceRows.get(pr.event_id).push({ label: pr.label, amount: pr.amount, estimate: !!pr.estimate });
+	}
 	return rows.map((r) => {
 		// with a limit, the first people to say they're keen get the spots and the rest wait in order
 		const all = byEvent.get(r.id) ?? [];
@@ -226,6 +249,7 @@ function hydrate(rows) {
 			...r,
 			tags: splitTags(r.tags),
 			interested: all.map((p, i) => ({ ...p, waiting: i >= cap })),
+			prices: priceRows.get(r.id) ?? [],
 			going_count: Math.min(all.length, cap),
 			waiting_count: Math.max(0, all.length - cap),
 			booker_name: bookers.get(r.booker_id) ?? null
@@ -247,24 +271,34 @@ export function createEvent(v, personId) {
 	return d.transaction(() => {
 		const info = d
 			.prepare(
-				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, price_min, price_max, capacity, created_by)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, price_min, price_max, price_estimate, capacity, created_by)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.capacity ?? null, personId);
+			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, personId);
 		const id = Number(info.lastInsertRowid);
+		setPrices(id, v.prices);
 		setSwipe(personId, id, 'interested');
 		return id;
 	})();
+}
+
+/** Replace an event's price rows (pence amounts, already validated). */
+export function setPrices(eventId, rows = []) {
+	const d = db();
+	d.prepare('DELETE FROM event_price WHERE event_id = ?').run(eventId);
+	const ins = d.prepare('INSERT INTO event_price (event_id, label, amount, estimate, position) VALUES (?, ?, ?, ?, ?)');
+	rows.filter((r) => typeof r.amount === 'number').forEach((r, i) => ins.run(eventId, r.label ?? '', r.amount, r.estimate ? 1 : 0, i));
 }
 
 export function updateEvent(id, v) {
 	db()
 		.prepare(
 			`UPDATE event SET title = ?, description = ?, location = ?, tags = ?, start_date = ?, end_date = ?, chat_link = ?,
-			   decide_by = ?, media_link = ?, price_min = ?, price_max = ?, capacity = ?
+			   decide_by = ?, media_link = ?, price_min = ?, price_max = ?, price_estimate = ?, capacity = ?
 			 WHERE id = ?`
 		)
-		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.capacity ?? null, id);
+		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, id);
+	setPrices(id, v.prices);
 	// Poll options that now fall outside the event's dates are no longer valid
 	db()
 		.prepare('DELETE FROM date_option WHERE event_id = ? AND (date < ? OR date > ?)')

@@ -522,32 +522,55 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok(usd.price_min === undefined, 'prefill: non-GBP prices are ignored');
 
 	const mk = (extra) => alice.post('/events/new', { title: 'Priced ' + Math.random().toString(36).slice(2, 6), start_date: addDays(50), ...extra });
-	const range = await mk({ price_min: '45', price_max: '60' });
+	const range = await mk({ price_amount_0: '45', price_amount_1: '60' });
 	const rangePath = loc(range);
-	ok(range.status === 303 && !!rangePath, 'event with a price range is created');
+	ok(range.status === 303 && !!rangePath, 'event with two prices is created');
 	const rangePage = await (await alice.req(rangePath)).text();
 	ok(rangePage.includes('£45–£60') && rangePage.includes('per person'), 'event page shows the price range');
 	ok((await (await alice.req('/plans')).text()).includes('£45–£60'), 'plans list shows the price flag');
-	const free = await mk({ price_min: 'free' });
+	const tiers = await mk({ price_label_0: 'Curzon', price_amount_0: '18', price_label_1: 'Vue', price_amount_1: '12.99', price_estimate_1: '1' });
+	const tiersPage = await (await alice.req(loc(tiers))).text();
+	ok(tiersPage.includes('Curzon') && tiersPage.includes('Vue') && tiersPage.includes('~£12.99') && tiersPage.includes('£18') && tiersPage.includes('estimate'), 'labelled price rows are listed, estimates marked with ~');
+	ok((await (await alice.req('/plans')).text()).includes('~£12.99–£18'), 'cards show the range with ~ when any price is an estimate');
+	const free = await mk({ price_amount_0: 'free' });
 	ok(!!loc(free) && (await (await alice.req(loc(free))).text()).includes('Free'), '"free" is accepted and shown as Free');
-	ok((await mk({ price_max: '60' })).status === 400, 'a top price without a lowest price is refused');
-	ok((await mk({ price_min: '60', price_max: '45' })).status === 400, 'a top price below the lowest is refused');
-	const junk = await mk({ price_min: 'abc' });
+	const noAmount = await mk({ price_label_0: 'Only a label' });
+	ok(noAmount.status === 400 && (await noAmount.text()).includes('Add an amount'), 'a price row with a label but no amount is refused');
+	const junk = await mk({ price_amount_0: 'abc' });
 	ok(junk.status === 400 && (await junk.text()).includes('value="abc"'), 'a bad price is refused and what was typed is shown again');
-	const edit = await alice.post(rangePath + '/edit', { title: 'Priced renamed', start_date: addDays(50), price_min: '45.5', price_max: '' });
+	const many = {};
+	for (let i = 0; i < 9; i++) many['price_amount_' + i] = String(10 + i);
+	ok((await mk(many)).status === 400, 'more than eight prices are refused');
+	const edit = await alice.post(rangePath + '/edit', { title: 'Priced renamed', start_date: addDays(50), price_amount_0: '45.5' });
 	ok(edit.status === 303 && (await (await alice.req(rangePath)).text()).includes('£45.50'), 'editing the price works and keeps pence');
+	ok(!(await (await alice.req(rangePath + '/edit')).text()).includes('value="60"'), 'the removed row is gone from the edit form');
+	const editForm = await (await alice.req(loc(tiers) + '/edit')).text();
+	ok(editForm.includes('value="Curzon"') && editForm.includes('value="12.99"') && /name="price_estimate_1"[^>]*checked/.test(editForm), 'the edit form shows the rows and the estimate tick');
 
 	const apiMake = await call('/api/v1/events', { method: 'POST', body: { title: 'Api priced', start_date: addDays(30), price_min: 45.5, price_max: 60 } });
 	const apiEv = (await apiMake.json()).event;
-	ok(apiMake.status === 201 && apiEv.price_min === 45.5 && apiEv.price_max === 60, 'API creates events with a price range (pounds)');
+	ok(apiMake.status === 201 && apiEv.price_min === 45.5 && apiEv.price_max === 60 && apiEv.prices.length === 2, 'API creates events with a price range (pounds)');
 	const rename = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { title: 'Api priced renamed' } });
 	const renamed = (await rename.json()).event;
-	ok(renamed.price_min === 45.5 && renamed.price_max === 60, 'API update keeps the price when it is not sent');
+	ok(renamed.price_min === 45.5 && renamed.price_max === 60 && renamed.prices.length === 2, 'API update keeps the price when it is not sent');
 	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_max: 40 } })).status === 400, 'API refuses a top price below the lowest');
 	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: 'abc' } })).status === 400, 'API refuses a non-numeric price');
-	const clear = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: null, price_max: null } });
+	const tiered = await call('/api/v1/events/' + apiEv.id, {
+		method: 'PATCH',
+		body: { prices: [{ label: 'Curzon Mayfair', amount: 18 }, { label: 'Vue West End', amount: 12.99, estimate: true }, { amount: 0 }] }
+	});
+	const t = (await tiered.json()).event;
+	ok(tiered.status === 200 && t.prices.length === 3 && t.prices[1].estimate === true && t.price_min === 0 && t.price_max === 18 && t.price_estimate === true, 'API sets tiered prices with estimates; the summary follows');
+	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { title: 'Api tiered' } }).then((r) => r.json())).event.prices.length === 3, 'API update keeps the rows when prices is not sent');
+	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { prices: [{ label: 'x' }] } })).status === 400, 'API refuses a price row without an amount');
+	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { prices: 'cheap' } })).status === 400, 'API refuses prices that is not a list');
+	const clear = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { prices: null } });
 	const cleared = (await clear.json()).event;
-	ok(clear.status === 200 && cleared.price_min === null && cleared.price_max === null, 'API can clear the price with null');
+	ok(clear.status === 200 && cleared.price_min === null && cleared.price_max === null && cleared.prices.length === 0, 'API can clear the prices with null');
+	const clear2 = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: 20 } });
+	ok((await clear2.json()).event.prices.length === 1, 'the old price_min shortcut still works');
+	const clear3 = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: null, price_max: null } });
+	ok((await clear3.json()).event.price_min === null, 'price_min null clears');
 }
 
 // ------------------------------------------------------------ settings + spots limit

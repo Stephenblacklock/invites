@@ -1,4 +1,13 @@
 // OpenAPI description for the token API, served publicly so a gateway can import it.
+const priceRow = {
+	type: 'object',
+	properties: {
+		label: { type: 'string', maxLength: 40, description: 'What the price is for, e.g. a venue or ticket type' },
+		amount: { type: 'number', description: 'Price per person in GBP (0 = free)' },
+		estimate: { type: 'boolean', description: 'True when the price is only an estimate' }
+	},
+	required: ['amount']
+};
 const event = {
 	type: 'object',
 	properties: {
@@ -12,6 +21,8 @@ const event = {
 		chat_link: { type: 'string', nullable: true },
 		price_min: { type: 'number', nullable: true, description: 'Price per person in GBP (0 = free), or the lowest price of a range' },
 		price_max: { type: 'number', nullable: true, description: 'Highest price per person in GBP, only for a range' },
+		price_estimate: { type: 'boolean', description: 'True when any of the prices is only an estimate' },
+		prices: { type: 'array', items: priceRow, description: 'Price rows, e.g. one per venue or ticket type. price_min / price_max summarise them.' },
 		decide_by: { type: 'string', format: 'date', nullable: true, description: 'Date by which the group should decide (e.g. tickets sell out)' },
 		capacity: { type: 'integer', nullable: true, description: 'Maximum number of people (spots), or null for no limit' },
 		media_link: { type: 'string', nullable: true, description: 'YouTube or Spotify link shown as a player on the event page' },
@@ -32,7 +43,8 @@ const input = {
 	start_date: { type: 'string', format: 'date', description: 'YYYY-MM-DD' },
 	end_date: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, omit for single-day events' },
 	chat_link: { type: 'string', nullable: true, description: 'Optional http(s) link, e.g. a WhatsApp group invite' },
-	price_min: { type: 'number', nullable: true, description: 'Price per person in GBP, e.g. 45 or 45.5 (0 = free). For a range this is the lowest price. null clears.' },
+	prices: { type: 'array', nullable: true, maxItems: 8, items: priceRow, description: 'Price rows (venue or ticket type, amount in GBP, estimate flag). The cards show their range. Replaces all existing rows; null clears them. Preferred over price_min / price_max.' },
+	price_min: { type: 'number', nullable: true, description: 'Shortcut for a single price per person in GBP, e.g. 45 or 45.5 (0 = free). With price_max it makes a range. Ignored if prices is sent. null clears.' },
 	price_max: { type: 'number', nullable: true, description: 'Top of a price range in GBP; needs price_min and must not be lower. null clears.' },
 	capacity: { type: 'integer', nullable: true, minimum: 1, maximum: 500, description: 'Spots: how many people can go (e.g. 3 tickets). Others can still say they are keen and wait in order. null clears.' },
 	decide_by: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, must be before the event ends. null clears it.' },
