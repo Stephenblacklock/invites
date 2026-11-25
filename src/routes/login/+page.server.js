@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { passwordLoginOn } from '#lib/server/db.js';
 import {
 	checkPassword,
 	clearLoginFailures,
@@ -10,10 +11,12 @@ import {
 
 export function load({ locals }) {
 	if (locals.session) redirect(303, '/');
+	return { passwordLogin: passwordLoginOn() };
 }
 
 export const actions = {
 	default: async (event) => {
+		if (!passwordLoginOn()) return fail(403, { error: 'Password sign-in is switched off. Use your personal link.' });
 		const ip = clientIp(event);
 		if (loginBlocked(ip)) return fail(429, { error: 'Too many attempts. Try again in a few minutes.' });
 

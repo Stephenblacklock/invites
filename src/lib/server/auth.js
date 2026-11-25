@@ -29,26 +29,33 @@ function key() {
 
 const sign = (data) => crypto.createHmac('sha256', key()).update(data).digest('base64url');
 
-/** pid = person id, or 0 when the password has been entered but no name chosen yet. */
-export function makeSession(pid) {
+/**
+ * pid = person id, or 0 when the password has been entered but no name chosen yet.
+ * epoch = the person's sess_epoch when the cookie was made; bumping it signs that person out everywhere.
+ */
+export function makeSession(pid, epoch = 0) {
 	const exp = Math.floor(Date.now() / 1000) + COOKIE_MAX_AGE;
-	const body = `${pid}.${exp}`;
+	const body = `${pid}.${exp}.${epoch}`;
 	return `${body}.${sign(body)}`;
 }
 
 export function readSession(token) {
 	if (!token) return null;
 	const parts = token.split('.');
-	if (parts.length !== 3) return null;
-	const [pid, exp, sig] = parts;
-	const expected = sign(`${pid}.${exp}`);
+	// older cookies had no epoch (pid.exp.sig) and count as epoch 0
+	if (parts.length !== 3 && parts.length !== 4) return null;
+	const sig = parts[parts.length - 1];
+	const [pid, exp] = parts;
+	const epoch = parts.length === 4 ? Number(parts[2]) : 0;
+	if (!Number.isInteger(epoch) || epoch < 0) return null;
+	const expected = sign(parts.slice(0, -1).join('.'));
 	const a = Buffer.from(sig);
 	const b = Buffer.from(expected);
 	if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
 	if (!Number.isInteger(+exp) || +exp < Date.now() / 1000) return null;
 	const id = Number(pid);
 	if (!Number.isInteger(id) || id < 0) return null;
-	return { pid: id || null };
+	return { pid: id || null, epoch };
 }
 
 export function checkPassword(input) {
@@ -109,8 +116,8 @@ function safeAddress(event) {
 	}
 }
 
-export function setSessionCookie(event, pid) {
-	event.cookies.set(COOKIE, makeSession(pid), {
+export function setSessionCookie(event, pid, epoch = 0) {
+	event.cookies.set(COOKIE, makeSession(pid, epoch), {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',

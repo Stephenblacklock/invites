@@ -123,7 +123,14 @@ const MIGRATIONS = [
 	CREATE INDEX club_member_person ON club_member (person_id);
 	ALTER TABLE event ADD COLUMN club_id INTEGER REFERENCES club(id) ON DELETE SET NULL;`,
 	// v10: how keen someone is (1 curious, 2 keen, 3 can't wait)
-	`ALTER TABLE swipe ADD COLUMN interest INTEGER NOT NULL DEFAULT 2 CHECK (interest BETWEEN 1 AND 3);`
+	`ALTER TABLE swipe ADD COLUMN interest INTEGER NOT NULL DEFAULT 2 CHECK (interest BETWEEN 1 AND 3);`,
+	// v11: personal invite links, admin, pausing access, and a per-person session epoch (bumping it signs every device out)
+	`ALTER TABLE person ADD COLUMN invite_token TEXT;
+	ALTER TABLE person ADD COLUMN invite_used_at TEXT;
+	ALTER TABLE person ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE person ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE person ADD COLUMN sess_epoch INTEGER NOT NULL DEFAULT 0;
+	CREATE UNIQUE INDEX person_invite_token ON person (invite_token) WHERE invite_token IS NOT NULL;`
 ];
 
 let _db;
@@ -145,6 +152,7 @@ export function db() {
 		})();
 	}
 	_db = d;
+	ensureAdmin();
 	return d;
 }
 
@@ -165,18 +173,69 @@ export function setMeta(key, value) {
 
 // ---------------------------------------------------------------- people
 export function getPerson(id) {
-	return db().prepare('SELECT id, name FROM person WHERE id = ?').get(id) ?? null;
+	return db().prepare('SELECT id, name, is_admin, disabled, sess_epoch FROM person WHERE id = ?').get(id) ?? null;
 }
 export function listPeople() {
 	return db().prepare('SELECT id, name FROM person ORDER BY name COLLATE NOCASE').all();
 }
 export function createPerson(name) {
 	const info = db().prepare('INSERT INTO person (name) VALUES (?)').run(name);
+	ensureAdmin();
 	return Number(info.lastInsertRowid);
 }
 export function findPersonByName(name) {
 	return db().prepare('SELECT id, name FROM person WHERE name = ?').get(name) ?? null;
 }
+
+// ---------------------------------------------------------------- invite links, admin, access
+/** The first admin is the person named in ADMIN_NAME (default INVITES_API_PERSON, then Stephen), once they exist. */
+export function ensureAdmin() {
+	const d = _db;
+	if (!d || d.prepare('SELECT 1 FROM person WHERE is_admin = 1').get()) return;
+	const name = (process.env.ADMIN_NAME || process.env.INVITES_API_PERSON || 'Stephen').trim();
+	d.prepare('UPDATE person SET is_admin = 1 WHERE name = ? COLLATE NOCASE').run(name);
+}
+
+/** A person's personal sign-in link secret; made the first time it is asked for and kept until reset. */
+export function getInviteToken(personId) {
+	const row = db().prepare('SELECT invite_token FROM person WHERE id = ?').get(personId);
+	return row?.invite_token || resetInviteToken(personId, false);
+}
+
+/** New link secret. The old link stops working; with signOut every device of that person is signed out too. */
+export function resetInviteToken(personId, signOut = true) {
+	const token = crypto.randomBytes(24).toString('base64url');
+	db()
+		.prepare(`UPDATE person SET invite_token = ?, invite_used_at = NULL, sess_epoch = sess_epoch + ? WHERE id = ?`)
+		.run(token, signOut ? 1 : 0, personId);
+	return token;
+}
+
+/** Who a link belongs to, or null for an unknown link or a paused person. */
+export function personByInviteToken(token) {
+	if (!token || token.length < 16) return null;
+	return (
+		db().prepare('SELECT id, name, sess_epoch FROM person WHERE invite_token = ? AND disabled = 0').get(token) ?? null
+	);
+}
+
+export function markInviteUsed(personId) {
+	db().prepare(`UPDATE person SET invite_used_at = COALESCE(invite_used_at, datetime('now')) WHERE id = ?`).run(personId);
+}
+
+export function setDisabled(personId, disabled) {
+	db().prepare('UPDATE person SET disabled = ?, sess_epoch = sess_epoch + 1 WHERE id = ?').run(disabled ? 1 : 0, personId);
+}
+
+/** Everyone, for the admin page. Links are made on demand for people who don't have one yet. */
+export function listPeopleAdmin() {
+	const rows = db()
+		.prepare('SELECT id, name, is_admin, disabled, invite_used_at FROM person ORDER BY name COLLATE NOCASE')
+		.all();
+	return rows.map((r) => ({ ...r, token: getInviteToken(r.id) }));
+}
+
+export const passwordLoginOn = () => getMeta('password_login') !== 'off';
 
 // ---------------------------------------------------------------- stations & travel (private to each person)
 export function getStations(personId) {

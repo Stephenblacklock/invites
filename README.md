@@ -4,25 +4,30 @@ Swipe on events with your friends. Someone adds an event (title, description, pl
 everyone else gets it in a swipe deck. Swipe right and you're in that event's group, where you can
 vote on a day, drop a chat link and sort out logistics. Swipe left and it's gone for you.
 
-Built for a small circle of friends: **one shared password, pick-a-name, no accounts.**
+Built for a small circle of friends: **personal invite links (shared password as a fallback), no accounts.**
 
 - SvelteKit 3 (adapter-node) + SQLite (`better-sqlite3`), mobile-first PWA
 - One container, one volume (`/data/invites.db`)
 
 ## How access works
 
-1. Everyone enters the shared password (`INVITES_PASSWORD`).
-2. They tap their name, or add it if they're new. The choice is remembered in a signed, httpOnly cookie (180 days).
+**Personal links (the normal way in).** Every person has their own link, `/join/<secret>`. Opening it shows "Continue as <name>";
+one tap signs that device in (a tap is required so link previews can't use it up). The link keeps working until an admin makes a new
+one, which also signs that person out everywhere. Find your own link in Settings, to sign in on another device.
 
-Names are trust-based: anyone with the password could pick anyone's name. That's the deliberate trade-off for v1.
-Changing `INVITES_PASSWORD` signs everybody out. Login is rate-limited (5 failed attempts per IP per 15 min, plus a global cap),
-and the app refuses to serve anything until a password of at least 8 characters is set.
+**Admin.** The person named by `ADMIN_NAME` (default `INVITES_API_PERSON`, then `Stephen`) is admin once they exist. Admins get
+**Manage people** in Settings (`/admin`): copy anyone's link, make a new one, pause or resume them, and switch the shared password on or off.
+
+**Shared password (fallback).** Anyone with `INVITES_PASSWORD` can still pick or add a name, until an admin switches it off on `/admin`.
+That path is trust-based. Changing `INVITES_PASSWORD` signs everybody out. Login is rate-limited (5 failed attempts per IP per 15 min,
+plus a global cap), and the app refuses to serve anything until a password of at least 8 characters is set.
 
 ## Configuration
 
 | Variable | Required | Notes |
 |---|---|---|
 | `INVITES_PASSWORD` | yes | Shared password, 8+ characters |
+| `ADMIN_NAME` | no | Who is admin (first match by name, only used while nobody is admin yet). Defaults to `INVITES_API_PERSON`, then `Stephen` |
 | `ORIGIN` | yes (behind a proxy) | Public URL, e.g. `https://invites.blacklocks.uk`. Needed for SvelteKit's form CSRF check |
 | `DB_PATH` | no | Defaults to `/data/invites.db` in the image |
 | `INVITES_API_TOKEN` | no | Enables the JSON API at `/api/v1` (bearer token, 24+ characters, e.g. `openssl rand -hex 32`). Unset = API returns 404 |
@@ -89,7 +94,6 @@ Notes:
 
 ## Ideas for later
 
-- Per-friend invite links instead of a shared password (real identity, revocable)
 - Notifications via the self-hosted ntfy server
 - Calendar (.ics) export, map pins for locations
 

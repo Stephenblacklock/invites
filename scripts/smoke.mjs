@@ -822,5 +822,81 @@ const del = await alice.post(evPath + '?/delete', {});
 ok(del.status === 303 && loc(del) === '/plans', 'creator can delete the event');
 ok((await alice.req(evPath)).status === 404, 'deleted event is 404');
 
+// ------------------------------------------------------------ personal invite links, admin
+{
+	const tokenOf = async (c) => (await (await c.req('/settings')).text()).match(/\/join\/([A-Za-z0-9_-]{20,})/)?.[1];
+	const mk = async (name, ip) => {
+		const c = new Client(ip);
+		await c.post('/login', { password: PASSWORD });
+		await c.post('/who?/create', { name });
+		return c;
+	};
+	const dora = await mk('Dora', '10.0.7.1');
+	const tokD = await tokenOf(dora);
+	ok(!!tokD, 'settings shows a personal sign-in link');
+	ok((await tokenOf(dora)) === tokD, 'the link stays the same between visits');
+
+	const anon = new Client('10.0.7.2');
+	const landing = await anon.req('/join/' + tokD);
+	ok(landing.status === 200 && (await landing.text()).includes('Continue as Dora'), 'join page names the person and needs a tap');
+	ok((await anon.req('/')).status === 303, 'opening the link alone does not sign in');
+	const go = await anon.post('/join/' + tokD, {});
+	ok(go.status === 303 && loc(go) === '/', 'tapping continue signs in');
+	ok((await anon.req('/')).status === 200, 'signed in as Dora via link');
+	ok((await (await anon.req('/settings')).text()).includes(tokD), 'same person, same link');
+	ok((await new Client('10.0.7.3').req('/join/not-a-real-token-at-all-0000')).status === 200, 'unknown link shows a friendly page');
+	ok((await new Client('10.0.7.3').post('/join/not-a-real-token-at-all-0000', {})).status === 404, 'unknown link cannot sign in');
+
+	// admin gate
+	ok((await dora.req('/admin')).status === 403, 'non-admin cannot open /admin');
+	ok((await dora.post('/admin?/pause', { id: 1 })).status === 403, 'non-admin cannot pause people');
+	const adminPage = await alice.req('/admin');
+	const ah = await adminPage.text();
+	ok(adminPage.status === 200 && ah.includes('Dora') && ah.includes(tokD), 'admin sees everyone and their links');
+
+	// reset: old link dead, devices signed out
+	const reset = await alice.post('/admin?/reset', { id: await idOf('Dora') });
+	ok(reset.status !== 403 && reset.status < 400, 'admin can make a new link');
+	ok((await dora.req('/')).status === 303, 'old devices are signed out after a new link');
+	ok((await anon.req('/')).status === 303, 'the link device is signed out too');
+	ok((await new Client('10.0.7.4').post('/join/' + tokD, {})).status === 404, 'old link no longer works');
+
+	const adminAfter = await (await alice.req('/admin')).text();
+	ok(!adminAfter.includes(tokD) && /\/join\/|token/.test(adminAfter), 'admin page shows the new link only');
+
+	async function idOf(name) {
+		const h = await (await alice.req('/admin')).text();
+		const m = h.match(new RegExp(`id:(\\d+),name:"${name}"`));
+		return m?.[1];
+	}
+
+	// pause / resume
+	const eve = await mk('Eve', '10.0.7.6');
+	const tokE = await tokenOf(eve);
+	const eveId = await idOf('Eve');
+	await alice.post('/admin?/pause', { id: eveId });
+	ok((await eve.req('/')).status === 303, 'a paused person is signed out');
+	ok((await new Client('10.0.7.7').post('/join/' + tokE, {})).status === 404, "a paused person's link is off");
+	const who = await new Client('10.0.7.8');
+	await who.post('/login', { password: PASSWORD });
+	const pickEve = await who.post('/who?/pick', { id: eveId });
+	ok(pickEve.status === 400, 'a paused person cannot be picked with the password');
+	await alice.post('/admin?/resume', { id: eveId });
+	ok((await new Client('10.0.7.9').post('/join/' + tokE, {})).status === 303, 'resumed link works again');
+
+	// admin cannot pause themselves
+	const aliceId = await idOf('Alice');
+	ok((await alice.post('/admin?/pause', { id: aliceId })).status === 400, 'admin cannot pause themselves');
+
+	// password fallback toggle
+	await alice.post('/admin?/passwordLogin', { on: '0' });
+	const noPw = new Client('10.0.7.10');
+	ok((await noPw.post('/login', { password: PASSWORD })).status === 403, 'password sign-in can be switched off');
+	ok(!(await (await noPw.req('/login')).text()).includes('name="password"'), 'login page hides the password box');
+	ok((await new Client('10.0.7.11').post('/join/' + tokE, {})).status === 303, 'links still work with password off');
+	await alice.post('/admin?/passwordLogin', { on: '1' });
+	ok((await new Client('10.0.7.12').post('/login', { password: PASSWORD })).status === 303, 'password sign-in can be switched back on');
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

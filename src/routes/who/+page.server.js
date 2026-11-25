@@ -10,8 +10,8 @@ export const actions = {
 	pick: async (event) => {
 		const fd = await event.request.formData();
 		const person = getPerson(Number(fd.get('id')));
-		if (!person) return fail(400, { error: 'Pick a name from the list.' });
-		setSessionCookie(event, person.id);
+		if (!person || person.disabled) return fail(400, { error: 'Pick a name from the list.' });
+		setSessionCookie(event, person.id, person.sess_epoch);
 		redirect(303, '/');
 	},
 	create: async (event) => {
@@ -22,7 +22,7 @@ export const actions = {
 		if (findPersonByName(name))
 			return fail(400, { error: 'That name is taken. If it is you, tap it in the list above.', name });
 		const id = createPerson(name);
-		setSessionCookie(event, id);
+		setSessionCookie(event, id, 0);
 		redirect(303, '/');
 	}
 };

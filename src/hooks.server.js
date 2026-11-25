@@ -5,6 +5,8 @@ import { apiError, authenticate } from '#lib/server/api.js';
 
 const PUBLIC_PATHS = new Set(['/login', '/healthz', '/manifest.webmanifest', '/robots.txt', '/service-worker.js']);
 const isAsset = (p) => p.startsWith('/_app/') || p.startsWith('/icon');
+// personal sign-in links: whoever holds the link is that person
+const isJoin = (p) => p.startsWith('/join/');
 
 function withHeaders(res) {
 	res.headers.set('X-Robots-Tag', 'noindex, nofollow');
@@ -73,11 +75,18 @@ export async function handle({ event, resolve }) {
 		);
 	}
 
-	const session = readSession(event.cookies.get(COOKIE));
+	let session = readSession(event.cookies.get(COOKIE));
+	let person = session?.pid ? getPerson(session.pid) : null;
+	// a paused person, or a cookie from before their link was reset, is signed out
+	if (person && (person.disabled || person.sess_epoch !== session.epoch)) {
+		person = null;
+		session = null;
+		event.cookies.delete(COOKIE, { path: '/' });
+	}
 	event.locals.session = session;
-	event.locals.person = session?.pid ? getPerson(session.pid) : null;
+	event.locals.person = person;
 
-	if (isAsset(path) || PUBLIC_PATHS.has(path)) {
+	if (isAsset(path) || isJoin(path) || PUBLIC_PATHS.has(path)) {
 		const res = await resolve(event);
 		return isAsset(path) ? res : withHeaders(res);
 	}

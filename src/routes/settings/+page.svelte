@@ -2,6 +2,16 @@
 	import { enhance } from '$app/forms';
 	let { data } = $props();
 	let copied = $state(false);
+	let copiedJoin = $state(false);
+	async function copyJoin() {
+		try {
+			await navigator.clipboard.writeText(data.joinLink);
+			copiedJoin = true;
+			setTimeout(() => (copiedJoin = false), 2000);
+		} catch {
+			window.prompt('Copy this link', data.joinLink);
+		}
+	}
 	async function copyFeed() {
 		try {
 			await navigator.clipboard.writeText(data.feed);
@@ -42,8 +52,16 @@
 </section>
 
 <section class="panel">
+	<h2>Your sign-in link</h2>
+	<p class="muted">Open this on another phone or browser to sign in as you, no password needed. It works until an admin makes a new one.</p>
+	<p class="row-btns"><button type="button" class="btn" onclick={copyJoin}>{copiedJoin ? 'Copied' : 'Copy link'}</button></p>
+	<p class="hint">Private: anyone with it can sign in as you.</p>
+</section>
+
+<section class="panel">
 	<h2>Account</h2>
 	<div class="row-btns">
+		{#if data.person?.is_admin}<a class="btn" href="/admin">Manage people</a>{/if}
 		<a class="btn" href="/who">Switch name</a>
 		<form method="POST" action="/logout"><button class="btn ghost">Sign out</button></form>
 	</div>
