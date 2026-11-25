@@ -2,6 +2,16 @@
 	import { enhance } from '$app/forms';
 	let { data, form } = $props();
 	let copied = $state(null);
+	async function copyInvite(i) {
+		const url = `${data.origin}/join/${i.token}`;
+		try {
+			await navigator.clipboard.writeText(url);
+			copied = 'i' + i.id;
+			setTimeout(() => (copied = null), 2000);
+		} catch {
+			window.prompt('Copy this link', url);
+		}
+	}
 	async function copy(p) {
 		const url = `${data.origin}/join/${p.token}`;
 		try {
@@ -16,10 +26,32 @@
 
 <svelte:head><title>Invites · Admin</title></svelte:head>
 
-<h1>People</h1>
+<h1>Admin</h1>
 <p class="muted">Each person has a personal link that keeps working until you make a new one. Send it to them once.</p>
 {#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
 
+<section class="panel">
+	<h2>Invite someone new</h2>
+	<p class="muted">Make a link, send it, and they type their own name. Each invite works once.</p>
+	<form method="POST" action="?/invite" use:enhance class="row-btns">
+		<input name="note" maxlength="40" placeholder="Who's it for? (optional)" />
+		<button class="btn primary">Make invite link</button>
+	</form>
+	{#each data.invites as i (i.id)}
+		<div class="row-btns">
+			<span>{i.used_name ? `${i.used_name} joined` : i.note || 'Open invite'}</span>
+			{#if !i.used_at}
+				<button type="button" class="btn" onclick={() => copyInvite(i)}>{copied === 'i' + i.id ? 'Copied' : 'Copy link'}</button>
+				<form method="POST" action="?/revokeInvite" use:enhance>
+					<input type="hidden" name="id" value={i.id} />
+					<button class="btn ghost">Revoke</button>
+				</form>
+			{/if}
+		</div>
+	{/each}
+</section>
+
+<h2>People</h2>
 <ul class="admin-people">
 	{#each data.people as p (p.id)}
 		<li class="panel">

@@ -898,5 +898,32 @@ ok((await alice.req(evPath)).status === 404, 'deleted event is 404');
 	ok((await new Client('10.0.7.12').post('/login', { password: PASSWORD })).status === 303, 'password sign-in can be switched back on');
 }
 
+// ------------------------------------------------------------ nameless sign-up invites
+{
+	const html = async (r) => await r.text();
+	await alice.post('/admin?/invite', { note: 'Fran' });
+	const page = await html(await alice.req('/admin'));
+	const tok = page.match(/token:"([A-Za-z0-9_-]{20,})",note:"Fran"/)?.[1];
+	ok(!!tok, 'admin can make a nameless invite');
+	const f = new Client('10.0.8.1');
+	const land = await f.req('/join/' + tok);
+	ok((await html(land)).includes('Your name'), 'invite page asks for a name');
+	ok((await f.post('/join/' + tok, { name: '' })).status === 400, 'a name is required');
+	ok((await f.post('/join/' + tok, { name: 'alice' })).status === 400, 'a taken name is refused');
+	const made = await f.post('/join/' + tok, { name: 'Fran' });
+	ok(made.status === 303 && loc(made) === '/', 'typing a name creates the account');
+	ok((await f.req('/')).status === 200, 'new person is signed in');
+	const again = new Client('10.0.8.2');
+	ok((await again.post('/join/' + tok, { name: 'Fran2' })).status === 404, 'an invite only works once');
+	ok((await html(await alice.req('/admin'))).includes('Fran'), 'admin sees who joined');
+	await alice.post('/admin?/invite', { note: 'Gone' });
+	const p2 = await html(await alice.req('/admin'));
+	const t2 = p2.match(/token:"([A-Za-z0-9_-]{20,})",note:"Gone"/)?.[1];
+	const iid = p2.match(/id:(\d+),token:"[^"]+",note:"Gone"/)?.[1];
+	await alice.post('/admin?/revokeInvite', { id: iid });
+	ok((await new Client('10.0.8.3').post('/join/' + t2, { name: 'Ghost' })).status === 404, 'a revoked invite does not work');
+	ok((await f.post('/admin?/invite', { note: 'x' })).status === 403, 'non-admin cannot make invites');
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

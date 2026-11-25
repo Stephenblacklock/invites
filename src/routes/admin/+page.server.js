@@ -1,6 +1,9 @@
 import { error, fail } from '@sveltejs/kit';
 import {
+	createInvite,
 	getPerson,
+	listInvites,
+	revokeInvite,
 	listPeopleAdmin,
 	passwordLoginOn,
 	resetInviteToken,
@@ -18,6 +21,7 @@ export function load({ locals, url }) {
 	return {
 		origin: url.origin,
 		people: listPeopleAdmin(),
+		invites: listInvites().filter((i) => !i.revoked),
 		passwordLogin: passwordLoginOn(),
 		meId: locals.person.id
 	};
@@ -47,6 +51,16 @@ export const actions = {
 		const { person } = await target(event);
 		if (!person) return fail(400, { error: 'No such person.' });
 		setDisabled(person.id, false);
+	},
+	invite: async (event) => {
+		admin(event.locals);
+		const fd = await event.request.formData();
+		createInvite((fd.get('note') ?? '').toString().trim());
+	},
+	revokeInvite: async (event) => {
+		admin(event.locals);
+		const fd = await event.request.formData();
+		revokeInvite(Number(fd.get('id')));
 	},
 	passwordLogin: async (event) => {
 		admin(event.locals);

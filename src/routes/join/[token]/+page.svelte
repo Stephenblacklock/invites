@@ -9,7 +9,17 @@
 		<img src="/icon.svg" alt="" width="72" height="72" />
 	</div>
 	<h1>Invites</h1>
-	{#if data.name}
+	{#if data.mode === 'new'}
+		<p class="muted">You're invited. Swipe on events and see who else is keen.</p>
+		<form method="POST" class="stack-form">
+			<label>
+				<span>Your name</span>
+				<input name="name" maxlength="30" autocomplete="given-name" value={form?.name ?? ''} required />
+			</label>
+			{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
+			<button class="btn primary">Join</button>
+		</form>
+	{:else if data.mode === 'back'}
 		<p class="muted">Swipe on events. See who else is keen.</p>
 		<form method="POST" class="stack-form">
 			<button class="btn primary">Continue as {data.name}</button>

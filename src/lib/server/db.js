@@ -130,7 +130,17 @@ const MIGRATIONS = [
 	ALTER TABLE person ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE person ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE person ADD COLUMN sess_epoch INTEGER NOT NULL DEFAULT 0;
-	CREATE UNIQUE INDEX person_invite_token ON person (invite_token) WHERE invite_token IS NOT NULL;`
+	CREATE UNIQUE INDEX person_invite_token ON person (invite_token) WHERE invite_token IS NOT NULL;`,
+	// v12: nameless one-time sign-up invites; the friend types their own name
+	`CREATE TABLE invite (
+		id INTEGER PRIMARY KEY,
+		token TEXT NOT NULL UNIQUE,
+		note TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		used_by INTEGER REFERENCES person(id) ON DELETE SET NULL,
+		used_at TEXT,
+		revoked INTEGER NOT NULL DEFAULT 0
+	);`
 ];
 
 let _db;
@@ -233,6 +243,38 @@ export function listPeopleAdmin() {
 		.prepare('SELECT id, name, is_admin, disabled, invite_used_at FROM person ORDER BY name COLLATE NOCASE')
 		.all();
 	return rows.map((r) => ({ ...r, token: getInviteToken(r.id) }));
+}
+
+export function createInvite(note = '') {
+	const token = crypto.randomBytes(24).toString('base64url');
+	db().prepare('INSERT INTO invite (token, note) VALUES (?, ?)').run(token, note.slice(0, 40));
+	return token;
+}
+/** An invite that hasn't been used or revoked, or null. */
+export function openInvite(token) {
+	if (!token || token.length < 16) return null;
+	return db().prepare('SELECT id, token, note FROM invite WHERE token = ? AND used_by IS NULL AND revoked = 0').get(token) ?? null;
+}
+export function listInvites() {
+	return db()
+		.prepare(`SELECT i.id, i.token, i.note, i.created_at, i.used_at, i.revoked, p.name AS used_name
+			FROM invite i LEFT JOIN person p ON p.id = i.used_by ORDER BY i.id DESC LIMIT 50`)
+		.all();
+}
+export function revokeInvite(id) {
+	db().prepare('UPDATE invite SET revoked = 1 WHERE id = ? AND used_by IS NULL').run(id);
+}
+/** Make the person and burn the invite in one step. */
+export function redeemInvite(inviteId, name) {
+	return db().transaction(() => {
+		const personId = createPerson(name);
+		const info = db()
+			.prepare(`UPDATE invite SET used_by = ?, used_at = datetime('now') WHERE id = ? AND used_by IS NULL AND revoked = 0`)
+			.run(personId, inviteId);
+		if (!info.changes) throw new Error('invite used');
+		markInviteUsed(personId);
+		return personId;
+	})();
 }
 
 export const passwordLoginOn = () => getMeta('password_login') !== 'off';
