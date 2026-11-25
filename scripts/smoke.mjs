@@ -624,12 +624,17 @@ if (process.env.TRAVEL_TESTS !== '1') {
 	const bt = await (await bobT.req(`/events/${gigId}/travel`)).json();
 	ok(bt.hasStations === false && bt.rows.length === 0, 'someone with no stations gets no times (and is nudged to set them)');
 
-	const nowhere = await alice.post('/events/new', { title: 'Mystery', location: 'Nowhere Special', start_date: addDays(11) });
+	const nowhere = await alice.post('/events/new', { title: 'Mystery', location: 'Nowhere Special, London', start_date: addDays(11) });
 	const nw = await (await alice.req(`/events/${loc(nowhere).split('/').pop()}/travel`)).json();
 	ok(nw.rows.length === 0, 'an unknown or non-London venue gets no journey time');
 	const calls2 = calls.geocode;
 	await alice.req(`/events/${loc(nowhere).split('/').pop()}/travel`);
 	ok(calls.geocode === calls2, 'a venue that could not be found is not looked up again');
+
+	const geoBefore = calls.geocode;
+	const edin = await alice.post('/events/new', { title: 'Hogmanay', location: 'Edinburgh, UK', start_date: addDays(12) });
+	const ed = await (await alice.req(`/events/${loc(edin).split('/').pop()}/travel`)).json();
+	ok(ed.rows.length === 0 && calls.geocode === geoBefore, 'a venue that does not say London gets no journey time and is not looked up');
 
 	await alice.post('/stations?/save', { kind: 'work', id: 'BROKEN', name: 'Broken' });
 	const broken = await (await alice.req(`/events/${gigId}/travel`)).json();
