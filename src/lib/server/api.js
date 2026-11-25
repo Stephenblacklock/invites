@@ -47,12 +47,14 @@ export function shapeEvent(e, url) {
 		price_min: e.price_min == null ? null : e.price_min / 100,
 		price_max: e.price_max == null ? null : e.price_max / 100,
 		decide_by: e.decide_by ?? null,
+		capacity: e.capacity ?? null,
 		media_link: e.media_link ?? null,
 		booking: e.booking_status ? { status: e.booking_status, by: e.booker_name, note: e.booking_note } : null,
 		created_by: e.creator_name,
 		image: e.image ? `${origin(url)}/img/${e.image}` : null,
-		interested: e.interested.map((p) => p.name),
-		interested_count: e.interested.length,
+		interested: e.interested.filter((p) => !p.waiting).map((p) => p.name),
+		interested_count: e.going_count,
+		waiting_list: e.interested.filter((p) => p.waiting).map((p) => p.name),
 		url: `${origin(url)}/events/${e.id}`
 	};
 }
@@ -72,7 +74,7 @@ export function shapeDetail(e, url, personId) {
 export function bodyToForm(body, base = {}) {
 	const errors = {};
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return { errors: { body: 'Expected a JSON object' } };
-	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'price_min', 'price_max'];
+	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'price_min', 'price_max', 'capacity'];
 	for (const k of Object.keys(body)) if (!allowed.includes(k) && k !== 'image_url') errors[k] = 'Unknown field';
 	if ('image_url' in body && body.image_url !== null && typeof body.image_url !== 'string') errors.image_url = 'Must be a string or null';
 	const fd = new FormData();
@@ -83,6 +85,7 @@ export function bodyToForm(body, base = {}) {
 			if (!(k in body) && typeof v === 'number') v = v / 100;
 			if (typeof v === 'number') v = Number.isFinite(v) ? String(v) : 'x';
 		}
+		if (k === 'capacity' && typeof v === 'number') v = Number.isInteger(v) ? String(v) : 'x';
 		if (v === null || v === undefined) v = '';
 		if (k === 'tags' && Array.isArray(v)) {
 			if (!v.every((t) => typeof t === 'string')) errors.tags = 'Tags must be strings';

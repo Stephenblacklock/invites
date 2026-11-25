@@ -406,9 +406,9 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok((await alice.req('/events/999999/calendar.ics')).status === 404, 'event .ics for a missing event is 404');
 
 	// subscription feed
-	const plans = await (await alice.req('/plans')).text();
+	const plans = await (await alice.req('/settings')).text();
 	const token = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(plans)?.[1];
-	ok(!!token, 'plans page shows the personal feed link');
+	ok(!!token, 'settings page shows the personal feed link');
 	const anon = new Client('10.0.2.3');
 	const feed = await anon.req(`/calendar/${token}.ics`);
 	const feedBody = await feed.text();
@@ -419,12 +419,12 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	const other = new Client('10.0.2.4');
 	await other.post('/login', { password: PASSWORD });
 	await other.post('/who?/create', { name: 'Calendar Bob' });
-	const otherPlans = await (await other.req('/plans')).text();
+	const otherPlans = await (await other.req('/settings')).text();
 	const otherToken = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(otherPlans)?.[1];
 	const otherFeed = await (await anon.req(`/calendar/${otherToken}.ics`)).text();
 	ok(!!otherToken && otherToken !== token && !otherFeed.includes('Fish\\, chips'), "someone else's feed doesn't include events they haven't joined");
-	await alice.post('/plans?/resetCalendar', {});
-	const newToken = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(await (await alice.req('/plans')).text())?.[1];
+	await alice.post('/settings?/resetCalendar', {});
+	const newToken = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(await (await alice.req('/settings')).text())?.[1];
 	ok(!!newToken && newToken !== token, 'resetting makes a new feed link');
 	ok((await anon.req(`/calendar/${token}.ics`)).status === 404 && (await anon.req(`/calendar/${newToken}.ics`)).status === 200, 'old feed link stops working, new one works');
 	await alice.post(evPath2 + '?/delete', {});
@@ -548,6 +548,52 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	const clear = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: null, price_max: null } });
 	const cleared = (await clear.json()).event;
 	ok(clear.status === 200 && cleared.price_min === null && cleared.price_max === null, 'API can clear the price with null');
+}
+
+// ------------------------------------------------------------ settings + spots limit
+{
+	const settings = await (await alice.req('/settings')).text();
+	ok(settings.includes('Calendar') && settings.includes('Travel times') && settings.includes('Switch name'), 'settings page has calendar, travel times and account');
+	const plansHtml = await (await alice.req('/plans')).text();
+	ok(!plansHtml.includes('Subscribe') && !plansHtml.includes('Your stations'), 'plans page no longer carries the calendar and travel panels');
+
+	const mk = async (name) => {
+		const c = new Client('10.0.5.' + (10 + Math.floor(Math.random() * 200)));
+		await c.post('/login', { password: PASSWORD });
+		await c.post('/who?/create', { name });
+		return c;
+	};
+	const cat = await mk('Cat Spots');
+	const dan = await mk('Dan Spots');
+	const made = await alice.post('/events/new', { title: 'Darts night', start_date: addDays(60), capacity: '2' });
+	const darts = loc(made);
+	ok(made.status === 303 && !!darts, 'event with a spots limit is created');
+	ok((await alice.post('/events/new', { title: 'Bad spots', start_date: addDays(60), capacity: '0' })).status === 400, 'zero spots is refused');
+	ok((await alice.post('/events/new', { title: 'Bad spots', start_date: addDays(60), capacity: 'lots' })).status === 400, 'non-numeric spots is refused');
+	let page = await (await alice.req(darts)).text();
+	ok(page.includes('1 of 2'), 'event page shows spots taken');
+	await cat.post(darts + '?/join', {});
+	page = await (await alice.req(darts)).text();
+	ok(page.includes('2 of 2') && !page.includes('Waiting list'), 'two people fill both spots');
+	const danPage = await (await dan.req(darts)).text();
+	ok(danPage.includes('Join the waiting list'), 'a full event offers the waiting list');
+	await dan.post(darts + '?/join', {});
+	page = await (await alice.req(darts)).text();
+	ok(page.includes('Waiting list') && page.includes('Dan Spots') && page.includes('#1'), 'the third person is on the waiting list');
+	const api = (await (await call('/api/v1/events?q=Darts%20night')).json()).events[0];
+	ok(api.capacity === 2 && api.interested.length === 2 && api.waiting_list.length === 1 && api.waiting_list[0] === 'Dan Spots', 'API reports spots and the waiting list');
+	await cat.post(darts + '?/leave', {});
+	page = await (await alice.req(darts)).text();
+	ok(page.includes('2 of 2') && !page.includes('Waiting list'), 'when someone leaves the next person gets their spot');
+	const edit = await alice.post(darts + '/edit', { title: 'Darts night', start_date: addDays(60), capacity: '' });
+	ok(edit.status === 303 && !(await (await alice.req(darts)).text()).includes('of 2'), 'clearing the limit removes it');
+	const mine = (await (await call('/api/v1/events', { method: 'POST', body: { title: 'Api spots', start_date: addDays(61), capacity: 4 } })).json()).event;
+	ok(mine.capacity === 4, 'API creates an event with a limit');
+	const patch = await call('/api/v1/events/' + mine.id, { method: 'PATCH', body: { capacity: 3 } });
+	ok(patch.status === 200 && (await patch.json()).event.capacity === 3, 'API can change the limit');
+	ok((await call('/api/v1/events/' + mine.id, { method: 'PATCH', body: { capacity: 'x' } })).status === 400, 'API refuses a bad limit');
+	const clr = await call('/api/v1/events/' + mine.id, { method: 'PATCH', body: { capacity: null } });
+	ok((await clr.json()).event.capacity === null, 'API can clear the limit with null');
 }
 
 // ------------------------------------------------------------ travel times (fake TfL + geocoder)

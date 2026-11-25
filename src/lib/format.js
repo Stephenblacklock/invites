@@ -77,6 +77,11 @@ export function flags(ev, today) {
 	if (ev.travel?.length) {
 		out.push({ text: ev.travel.map((t) => `${t.kind === 'home' ? 'Home' : 'Work'} ${t.minutes} min`).join(' · '), travel: true });
 	}
+	if (ev.capacity != null) {
+		const left = ev.capacity - (ev.going_count ?? 0);
+		if (left > 0) out.push({ text: left === 1 ? '1 spot left' : `${left} spots left`, urgent: left === 1 });
+		else out.push({ text: ev.waiting_count ? `Full · ${ev.waiting_count} waiting` : 'Full', urgent: true });
+	}
 	if (ev.decide_by && ev.decide_by >= today) {
 		const n = dayDiff(today, ev.decide_by);
 		out.push({

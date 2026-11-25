@@ -13,12 +13,14 @@ const event = {
 		price_min: { type: 'number', nullable: true, description: 'Price per person in GBP (0 = free), or the lowest price of a range' },
 		price_max: { type: 'number', nullable: true, description: 'Highest price per person in GBP, only for a range' },
 		decide_by: { type: 'string', format: 'date', nullable: true, description: 'Date by which the group should decide (e.g. tickets sell out)' },
+		capacity: { type: 'integer', nullable: true, description: 'Maximum number of people (spots), or null for no limit' },
 		media_link: { type: 'string', nullable: true, description: 'YouTube or Spotify link shown as a player on the event page' },
 		booking: { type: 'object', nullable: true, description: 'Who is sorting tickets (read-only, set in the app)', properties: { status: { type: 'string', enum: ['booking', 'booked'] }, by: { type: 'string' }, note: { type: 'string', nullable: true } } },
 		created_by: { type: 'string' },
 		image: { type: 'string', nullable: true, description: 'Banner picture URL (needs the friends\' session to view)' },
-		interested: { type: 'array', items: { type: 'string' }, description: 'Names of friends who are interested' },
+		interested: { type: 'array', items: { type: 'string' }, description: 'Names of friends who are interested and have a spot (the first people to say so, up to capacity)' },
 		interested_count: { type: 'integer' },
+		waiting_list: { type: 'array', items: { type: 'string' }, description: 'Names waiting for a spot, in order (only when capacity is set and full)' },
 		url: { type: 'string' }
 	}
 };
@@ -32,6 +34,7 @@ const input = {
 	chat_link: { type: 'string', nullable: true, description: 'Optional http(s) link, e.g. a WhatsApp group invite' },
 	price_min: { type: 'number', nullable: true, description: 'Price per person in GBP, e.g. 45 or 45.5 (0 = free). For a range this is the lowest price. null clears.' },
 	price_max: { type: 'number', nullable: true, description: 'Top of a price range in GBP; needs price_min and must not be lower. null clears.' },
+	capacity: { type: 'integer', nullable: true, minimum: 1, maximum: 500, description: 'Spots: how many people can go (e.g. 3 tickets). Others can still say they are keen and wait in order. null clears.' },
 	decide_by: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, must be before the event ends. null clears it.' },
 	media_link: { type: 'string', nullable: true, description: 'A YouTube video/playlist or Spotify track/album/playlist/artist link (e.g. a trailer for a film, a playlist for a gig). null clears it.' },
 	image_url: { type: 'string', nullable: true, description: 'Direct https link to a JPEG, PNG, WebP or GIF (max 8 MB). The server downloads and keeps its own copy as the event banner. On update, null removes the banner.' }

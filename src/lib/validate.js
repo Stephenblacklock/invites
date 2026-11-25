@@ -28,6 +28,15 @@ export function parsePrice(raw) {
 	return Math.round(parseFloat(t) * 100);
 }
 
+/** '3' → 3; '' → null; anything that is not a whole number from 1 to 500 → undefined (invalid). */
+export function parseCapacity(raw) {
+	const t = String(raw ?? '').trim();
+	if (!t) return null;
+	if (!/^\d{1,3}$/.test(t)) return undefined;
+	const n = parseInt(t, 10);
+	return n >= 1 && n <= 500 ? n : undefined;
+}
+
 export function cleanLink(raw) {
 	const s = (raw ?? '').toString().trim();
 	if (!s) return { ok: true, value: null };
@@ -58,6 +67,7 @@ export function validateEvent(fd, { today, requireFuture }) {
 	const pMin = parsePrice(get('price_min'));
 	const pMax = parsePrice(get('price_max'));
 	const media = get('media_link');
+	const cap = parseCapacity(get('capacity'));
 
 	if (!title) errors.title = 'Give it a title';
 	else if (title.length > 80) errors.title = 'Keep the title under 80 characters';
@@ -80,6 +90,7 @@ export function validateEvent(fd, { today, requireFuture }) {
 		if (pMin == null) errors.price_min = 'Add the lowest price too';
 		else if (pMax < pMin) errors.price_max = 'The top price is below the lowest price';
 	}
+	if (cap === undefined) errors.capacity = 'Enter a whole number from 1 to 500, or leave it empty';
 	if (media && !parseMedia(media)) errors.media_link = 'Use a YouTube or Spotify link';
 	if (!link.ok) errors.chat_link = 'Enter a full http(s) link, e.g. a WhatsApp invite';
 
@@ -95,6 +106,7 @@ export function validateEvent(fd, { today, requireFuture }) {
 		// keep what was typed when it was invalid so the form can show it again
 		price_min: pMin === undefined ? get('price_min') : pMin,
 		price_max: pMax === undefined ? get('price_max') : pMax != null && pMax === pMin ? null : pMax,
+		capacity: cap === undefined ? get('capacity') : cap,
 		media_link: media ? (parseMedia(media)?.link ?? null) : null
 	};
 	return { ok: Object.keys(errors).length === 0, errors, values };

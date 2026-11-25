@@ -1,7 +1,7 @@
-import { eventsByDecision, getCalToken, resetCalToken, todayISO } from '#lib/server/db.js';
+import { eventsByDecision, todayISO } from '#lib/server/db.js';
 import { warm, withTravel } from '#lib/server/travel.js';
 
-export function load({ locals, url }) {
+export function load({ locals }) {
 	const today = todayISO();
 	const all = eventsByDecision(locals.person.id, 'interested');
 	const upcoming = withTravel(
@@ -13,12 +13,5 @@ export function load({ locals, url }) {
 		.filter((e) => (e.end_date || e.start_date) < today)
 		.reverse()
 		.slice(0, 10);
-	const feed = `${url.origin}/calendar/${getCalToken(locals.person.id)}.ics`;
-	return { upcoming, past, feed };
+	return { upcoming, past };
 }
-
-export const actions = {
-	resetCalendar: ({ locals }) => {
-		resetCalToken(locals.person.id);
-	}
-};

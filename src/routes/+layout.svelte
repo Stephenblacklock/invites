@@ -12,7 +12,7 @@
 	{#if data.person}
 		<header class="topbar">
 			<a class="wordmark" href="/">Invites</a>
-			<a class="whoami" href="/who" title="Switch name">
+			<a class="whoami" href="/settings" title="Settings">
 				<span class="avatar sm" style:--h={hue(data.person.name)} aria-hidden="true">{data.person.name[0].toUpperCase()}</span>
 				{data.person.name}
 			</a>

@@ -52,6 +52,13 @@
 </div>
 
 <label>
+	<span>Spots <em>(optional)</em></span>
+	<input name="capacity" inputmode="numeric" value={values.capacity ?? ''} placeholder="3" />
+	{#if errors.capacity}<small class="error">{errors.capacity}</small>{/if}
+</label>
+<p class="hint">For things with a limited number of tickets or seats. Anyone else can still say they're keen and joins a waiting list in order.</p>
+
+<label>
 	<span>Decide by <em>(optional)</em></span>
 	<input type="date" name="decide_by" value={values.decide_by ?? ''} min={allowPast ? undefined : today} />
 	{#if errors.decide_by}<small class="error">{errors.decide_by}</small>{/if}
