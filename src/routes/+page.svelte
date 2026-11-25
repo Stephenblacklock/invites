@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { INTEREST, bg, countdown, flags, fmtRange, hue } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
+	import Welcome from '#lib/components/Welcome.svelte';
 
 	let { data } = $props();
 
@@ -147,6 +148,8 @@
 
 <svelte:window onkeydown={key} />
 <svelte:head><title>Invites</title></svelte:head>
+
+<Welcome joinLink={data.welcome.joinLink} friends={data.welcome.friends} />
 
 {#if allTags.length > 1}
 	<div class="chips" role="group" aria-label="Filter by tag">

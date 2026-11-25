@@ -253,11 +253,12 @@ export function createInvite(note = '') {
 /** An invite that hasn't been used or revoked, or null. */
 export function openInvite(token) {
 	if (!token || token.length < 16) return null;
-	return db().prepare('SELECT id, token, note FROM invite WHERE token = ? AND used_by IS NULL AND revoked = 0').get(token) ?? null;
+	return db().prepare("SELECT id, token, note FROM invite WHERE token = ? AND used_by IS NULL AND revoked = 0 AND created_at > datetime('now', '-14 days')").get(token) ?? null;
 }
 export function listInvites() {
 	return db()
-		.prepare(`SELECT i.id, i.token, i.note, i.created_at, i.used_at, i.revoked, p.name AS used_name
+		.prepare(`SELECT i.id, i.token, i.note, i.created_at, i.used_at, i.revoked, p.name AS used_name,
+			(i.used_by IS NULL AND i.created_at <= datetime('now', '-14 days')) AS expired
 			FROM invite i LEFT JOIN person p ON p.id = i.used_by ORDER BY i.id DESC LIMIT 50`)
 		.all();
 }

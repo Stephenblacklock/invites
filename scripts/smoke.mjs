@@ -925,5 +925,20 @@ ok((await alice.req(evPath)).status === 404, 'deleted event is 404');
 	ok((await f.post('/admin?/invite', { note: 'x' })).status === 403, 'non-admin cannot make invites');
 }
 
+// ------------------------------------------------------------ invite expiry, welcome panel
+{
+	const { default: Database } = await import('better-sqlite3');
+	await alice.post('/admin?/invite', { note: 'Stale' });
+	const h = await (await alice.req('/admin')).text();
+	const t = h.match(/token:"([A-Za-z0-9_-]{20,})",note:"Stale"/)?.[1];
+	const sdb = new Database(process.env.DB_PATH ?? '/tmp/smokedata/invites.db');
+	sdb.prepare(`UPDATE invite SET created_at = datetime('now','-15 days') WHERE token = ?`).run(t);
+	sdb.close();
+	ok((await new Client('10.0.9.1').post('/join/' + t, { name: 'Late' })).status === 404, 'an invite older than 14 days is refused');
+	ok((await (await alice.req('/admin')).text()).includes('(expired)'), 'admin shows expired invites');
+	const deck = await (await alice.req('/')).text();
+	ok(deck.includes('Keep your link') || deck.includes('/join/'), 'deck carries the welcome panel data');
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

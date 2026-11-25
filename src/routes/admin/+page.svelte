@@ -2,14 +2,17 @@
 	import { enhance } from '$app/forms';
 	let { data, form } = $props();
 	let copied = $state(null);
-	async function copyInvite(i) {
+	async function copyInvite(i, asMessage = false) {
 		const url = `${data.origin}/join/${i.token}`;
+		const text = asMessage
+			? `Join our events app: swipe on gigs, films and nights out and see which friends are keen. Open this, type your name and you're in (link works once, for 14 days): ${url}`
+			: url;
 		try {
-			await navigator.clipboard.writeText(url);
-			copied = 'i' + i.id;
+			await navigator.clipboard.writeText(text);
+			copied = (asMessage ? 'm' : 'i') + i.id;
 			setTimeout(() => (copied = null), 2000);
 		} catch {
-			window.prompt('Copy this link', url);
+			window.prompt('Copy this', text);
 		}
 	}
 	async function copy(p) {
@@ -32,15 +35,16 @@
 
 <section class="panel">
 	<h2>Invite someone new</h2>
-	<p class="muted">Make a link, send it, and they type their own name. Each invite works once.</p>
+	<p class="muted">Make a link, send it, and they type their own name. Each invite works once and expires after 14 days.</p>
 	<form method="POST" action="?/invite" use:enhance class="row-btns">
 		<input name="note" maxlength="40" placeholder="Who's it for? (optional)" />
 		<button class="btn primary">Make invite link</button>
 	</form>
 	{#each data.invites as i (i.id)}
 		<div class="row-btns">
-			<span>{i.used_name ? `${i.used_name} joined` : i.note || 'Open invite'}</span>
-			{#if !i.used_at}
+			<span>{i.used_name ? `${i.used_name} joined` : i.expired ? `${i.note || 'Invite'} (expired)` : i.note || 'Open invite'}</span>
+			{#if !i.used_at && !i.expired}
+				<button type="button" class="btn primary" onclick={() => copyInvite(i, true)}>{copied === 'm' + i.id ? 'Copied' : 'Copy message'}</button>
 				<button type="button" class="btn" onclick={() => copyInvite(i)}>{copied === 'i' + i.id ? 'Copied' : 'Copy link'}</button>
 				<form method="POST" action="?/revokeInvite" use:enhance>
 					<input type="hidden" name="id" value={i.id} />

@@ -15,7 +15,7 @@ Built for a small circle of friends: **personal invite links (shared password as
 one tap signs that device in (a tap is required so link previews can't use it up). The link keeps working until an admin makes a new
 one, which also signs that person out everywhere. Find your own link in Settings, to sign in on another device.
 
-**New friends.** On `/admin` make a nameless invite link (optionally labelled), send it, and they open it, type their own name and are in. Each invite works once and can be revoked before use; afterwards they have their own personal link like everyone else.
+**New friends.** On `/admin` make a nameless invite link (optionally labelled), send it, and they open it, type their own name and are in. Each invite works once, expires after 14 days and can be revoked before use ("Copy message" gives a ready-to-send text); afterwards they have their own personal link like everyone else. First visit shows a dismissible welcome panel (how swiping works, keep your link, add to home screen).
 
 **Admin.** The person named by `ADMIN_NAME` (default `INVITES_API_PERSON`, then `Stephen`) is admin once they exist. Admins get
 **Manage people** in Settings (`/admin`): copy anyone's link, make a new one, pause or resume them, and switch the shared password on or off.
