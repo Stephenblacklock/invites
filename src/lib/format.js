@@ -62,20 +62,32 @@ export function bg(image) {
 }
 
 const pounds = (pence) => '£' + (pence % 100 ? (pence / 100).toFixed(2) : String(pence / 100));
-/** '£45', '£30–£60', 'Free' or null when no price is set. Prices are pence. */
+/** '£45', '£30–£60', '~£45' (estimate), 'Free' or null when no price is set. Prices are pence. */
 export function priceLabel(ev) {
 	if (ev.price_min == null) return null;
 	if (ev.price_min === 0 && ev.price_max == null) return 'Free';
-	return ev.price_max != null ? `${pounds(ev.price_min)}–${pounds(ev.price_max)}` : pounds(ev.price_min);
+	const tilde = ev.price_estimate ? '~' : '';
+	return ev.price_max != null ? `${tilde}${pounds(ev.price_min)}–${pounds(ev.price_max)}` : tilde + pounds(ev.price_min);
+}
+
+/** One price row for the event page: '£18', '~£12.99' or 'Free'. */
+export function rowAmount(r) {
+	return r.amount === 0 ? 'Free' : (r.estimate ? '~' : '') + pounds(r.amount);
 }
 
 /** Small status flags shown on cards and rows: decide-by date and ticket booking. */
 export function flags(ev, today) {
 	const out = [];
+	if (ev.club_name) out.push({ text: ev.club_name, club: true });
 	const price = priceLabel(ev);
 	if (price) out.push({ text: price, price: true });
 	if (ev.travel?.length) {
 		out.push({ text: ev.travel.map((t) => `${t.kind === 'home' ? 'Home' : 'Work'} ${t.minutes} min`).join(' · '), travel: true });
+	}
+	if (ev.capacity != null) {
+		const left = ev.capacity - (ev.going_count ?? 0);
+		if (left > 0) out.push({ text: left === 1 ? '1 spot left' : `${left} spots left`, urgent: left === 1 });
+		else out.push({ text: ev.waiting_count ? `Full · ${ev.waiting_count} waiting` : 'Full', urgent: true });
 	}
 	if (ev.decide_by && ev.decide_by >= today) {
 		const n = dayDiff(today, ev.decide_by);

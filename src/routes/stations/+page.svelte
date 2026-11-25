@@ -5,7 +5,7 @@
 
 <svelte:head><title>Invites · Your stations</title></svelte:head>
 
-<a class="back" href="/plans">← Plans</a>
+<a class="back" href="/settings">← Settings</a>
 <h1>Your stations</h1>
 <p class="muted">
 	Pick a home and/or work station and every event with a London location shows roughly how long it takes to get there.

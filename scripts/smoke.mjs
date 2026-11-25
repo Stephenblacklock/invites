@@ -406,9 +406,9 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok((await alice.req('/events/999999/calendar.ics')).status === 404, 'event .ics for a missing event is 404');
 
 	// subscription feed
-	const plans = await (await alice.req('/plans')).text();
+	const plans = await (await alice.req('/settings')).text();
 	const token = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(plans)?.[1];
-	ok(!!token, 'plans page shows the personal feed link');
+	ok(!!token, 'settings page shows the personal feed link');
 	const anon = new Client('10.0.2.3');
 	const feed = await anon.req(`/calendar/${token}.ics`);
 	const feedBody = await feed.text();
@@ -419,12 +419,12 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	const other = new Client('10.0.2.4');
 	await other.post('/login', { password: PASSWORD });
 	await other.post('/who?/create', { name: 'Calendar Bob' });
-	const otherPlans = await (await other.req('/plans')).text();
+	const otherPlans = await (await other.req('/settings')).text();
 	const otherToken = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(otherPlans)?.[1];
 	const otherFeed = await (await anon.req(`/calendar/${otherToken}.ics`)).text();
 	ok(!!otherToken && otherToken !== token && !otherFeed.includes('Fish\\, chips'), "someone else's feed doesn't include events they haven't joined");
-	await alice.post('/plans?/resetCalendar', {});
-	const newToken = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(await (await alice.req('/plans')).text())?.[1];
+	await alice.post('/settings?/resetCalendar', {});
+	const newToken = /\/calendar\/([A-Za-z0-9_-]{32})\.ics/.exec(await (await alice.req('/settings')).text())?.[1];
 	ok(!!newToken && newToken !== token, 'resetting makes a new feed link');
 	ok((await anon.req(`/calendar/${token}.ics`)).status === 404 && (await anon.req(`/calendar/${newToken}.ics`)).status === 200, 'old feed link stops working, new one works');
 	await alice.post(evPath2 + '?/delete', {});
@@ -522,32 +522,200 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	ok(usd.price_min === undefined, 'prefill: non-GBP prices are ignored');
 
 	const mk = (extra) => alice.post('/events/new', { title: 'Priced ' + Math.random().toString(36).slice(2, 6), start_date: addDays(50), ...extra });
-	const range = await mk({ price_min: '45', price_max: '60' });
+	const range = await mk({ price_amount_0: '45', price_amount_1: '60' });
 	const rangePath = loc(range);
-	ok(range.status === 303 && !!rangePath, 'event with a price range is created');
+	ok(range.status === 303 && !!rangePath, 'event with two prices is created');
 	const rangePage = await (await alice.req(rangePath)).text();
 	ok(rangePage.includes('£45–£60') && rangePage.includes('per person'), 'event page shows the price range');
 	ok((await (await alice.req('/plans')).text()).includes('£45–£60'), 'plans list shows the price flag');
-	const free = await mk({ price_min: 'free' });
+	const tiers = await mk({ price_label_0: 'Curzon', price_amount_0: '18', price_label_1: 'Vue', price_amount_1: '12.99', price_estimate_1: '1' });
+	const tiersPage = await (await alice.req(loc(tiers))).text();
+	ok(tiersPage.includes('Curzon') && tiersPage.includes('Vue') && tiersPage.includes('~£12.99') && tiersPage.includes('£18') && tiersPage.includes('estimate'), 'labelled price rows are listed, estimates marked with ~');
+	ok((await (await alice.req('/plans')).text()).includes('~£12.99–£18'), 'cards show the range with ~ when any price is an estimate');
+	const free = await mk({ price_amount_0: 'free' });
 	ok(!!loc(free) && (await (await alice.req(loc(free))).text()).includes('Free'), '"free" is accepted and shown as Free');
-	ok((await mk({ price_max: '60' })).status === 400, 'a top price without a lowest price is refused');
-	ok((await mk({ price_min: '60', price_max: '45' })).status === 400, 'a top price below the lowest is refused');
-	const junk = await mk({ price_min: 'abc' });
+	const noAmount = await mk({ price_label_0: 'Only a label' });
+	ok(noAmount.status === 400 && (await noAmount.text()).includes('Add an amount'), 'a price row with a label but no amount is refused');
+	const junk = await mk({ price_amount_0: 'abc' });
 	ok(junk.status === 400 && (await junk.text()).includes('value="abc"'), 'a bad price is refused and what was typed is shown again');
-	const edit = await alice.post(rangePath + '/edit', { title: 'Priced renamed', start_date: addDays(50), price_min: '45.5', price_max: '' });
+	const many = {};
+	for (let i = 0; i < 9; i++) many['price_amount_' + i] = String(10 + i);
+	ok((await mk(many)).status === 400, 'more than eight prices are refused');
+	const edit = await alice.post(rangePath + '/edit', { title: 'Priced renamed', start_date: addDays(50), price_amount_0: '45.5' });
 	ok(edit.status === 303 && (await (await alice.req(rangePath)).text()).includes('£45.50'), 'editing the price works and keeps pence');
+	ok(!(await (await alice.req(rangePath + '/edit')).text()).includes('value="60"'), 'the removed row is gone from the edit form');
+	const editForm = await (await alice.req(loc(tiers) + '/edit')).text();
+	ok(editForm.includes('value="Curzon"') && editForm.includes('value="12.99"') && /name="price_estimate_1"[^>]*checked/.test(editForm), 'the edit form shows the rows and the estimate tick');
 
 	const apiMake = await call('/api/v1/events', { method: 'POST', body: { title: 'Api priced', start_date: addDays(30), price_min: 45.5, price_max: 60 } });
 	const apiEv = (await apiMake.json()).event;
-	ok(apiMake.status === 201 && apiEv.price_min === 45.5 && apiEv.price_max === 60, 'API creates events with a price range (pounds)');
+	ok(apiMake.status === 201 && apiEv.price_min === 45.5 && apiEv.price_max === 60 && apiEv.prices.length === 2, 'API creates events with a price range (pounds)');
 	const rename = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { title: 'Api priced renamed' } });
 	const renamed = (await rename.json()).event;
-	ok(renamed.price_min === 45.5 && renamed.price_max === 60, 'API update keeps the price when it is not sent');
+	ok(renamed.price_min === 45.5 && renamed.price_max === 60 && renamed.prices.length === 2, 'API update keeps the price when it is not sent');
 	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_max: 40 } })).status === 400, 'API refuses a top price below the lowest');
 	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: 'abc' } })).status === 400, 'API refuses a non-numeric price');
-	const clear = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: null, price_max: null } });
+	const tiered = await call('/api/v1/events/' + apiEv.id, {
+		method: 'PATCH',
+		body: { prices: [{ label: 'Curzon Mayfair', amount: 18 }, { label: 'Vue West End', amount: 12.99, estimate: true }, { amount: 0 }] }
+	});
+	const t = (await tiered.json()).event;
+	ok(tiered.status === 200 && t.prices.length === 3 && t.prices[1].estimate === true && t.price_min === 0 && t.price_max === 18 && t.price_estimate === true, 'API sets tiered prices with estimates; the summary follows');
+	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { title: 'Api tiered' } }).then((r) => r.json())).event.prices.length === 3, 'API update keeps the rows when prices is not sent');
+	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { prices: [{ label: 'x' }] } })).status === 400, 'API refuses a price row without an amount');
+	ok((await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { prices: 'cheap' } })).status === 400, 'API refuses prices that is not a list');
+	const clear = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { prices: null } });
 	const cleared = (await clear.json()).event;
-	ok(clear.status === 200 && cleared.price_min === null && cleared.price_max === null, 'API can clear the price with null');
+	ok(clear.status === 200 && cleared.price_min === null && cleared.price_max === null && cleared.prices.length === 0, 'API can clear the prices with null');
+	const clear2 = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: 20 } });
+	ok((await clear2.json()).event.prices.length === 1, 'the old price_min shortcut still works');
+	const clear3 = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { price_min: null, price_max: null } });
+	ok((await clear3.json()).event.price_min === null, 'price_min null clears');
+}
+
+// ------------------------------------------------------------ settings + spots limit
+{
+	const settings = await (await alice.req('/settings')).text();
+	ok(settings.includes('Calendar') && settings.includes('Travel times') && settings.includes('Switch name'), 'settings page has calendar, travel times and account');
+	const plansHtml = await (await alice.req('/plans')).text();
+	ok(!plansHtml.includes('Subscribe') && !plansHtml.includes('Your stations'), 'plans page no longer carries the calendar and travel panels');
+
+	const mk = async (name) => {
+		const c = new Client('10.0.5.' + (10 + Math.floor(Math.random() * 200)));
+		await c.post('/login', { password: PASSWORD });
+		await c.post('/who?/create', { name });
+		return c;
+	};
+	const cat = await mk('Cat Spots');
+	const dan = await mk('Dan Spots');
+	const made = await alice.post('/events/new', { title: 'Darts night', start_date: addDays(60), capacity: '2' });
+	const darts = loc(made);
+	ok(made.status === 303 && !!darts, 'event with a spots limit is created');
+	ok((await alice.post('/events/new', { title: 'Bad spots', start_date: addDays(60), capacity: '0' })).status === 400, 'zero spots is refused');
+	ok((await alice.post('/events/new', { title: 'Bad spots', start_date: addDays(60), capacity: 'lots' })).status === 400, 'non-numeric spots is refused');
+	let page = await (await alice.req(darts)).text();
+	ok(page.includes('1 of 2'), 'event page shows spots taken');
+	await cat.post(darts + '?/join', {});
+	page = await (await alice.req(darts)).text();
+	ok(page.includes('2 of 2') && !page.includes('Waiting list'), 'two people fill both spots');
+	const danPage = await (await dan.req(darts)).text();
+	ok(danPage.includes('Join the waiting list'), 'a full event offers the waiting list');
+	await dan.post(darts + '?/join', {});
+	page = await (await alice.req(darts)).text();
+	ok(page.includes('Waiting list') && page.includes('Dan Spots') && page.includes('#1'), 'the third person is on the waiting list');
+	const api = (await (await call('/api/v1/events?q=Darts%20night')).json()).events[0];
+	ok(api.capacity === 2 && api.interested.length === 2 && api.waiting_list.length === 1 && api.waiting_list[0] === 'Dan Spots', 'API reports spots and the waiting list');
+	await cat.post(darts + '?/leave', {});
+	page = await (await alice.req(darts)).text();
+	ok(page.includes('2 of 2') && !page.includes('Waiting list'), 'when someone leaves the next person gets their spot');
+	const edit = await alice.post(darts + '/edit', { title: 'Darts night', start_date: addDays(60), capacity: '' });
+	ok(edit.status === 303 && !(await (await alice.req(darts)).text()).includes('of 2'), 'clearing the limit removes it');
+	const mine = (await (await call('/api/v1/events', { method: 'POST', body: { title: 'Api spots', start_date: addDays(61), capacity: 4 } })).json()).event;
+	ok(mine.capacity === 4, 'API creates an event with a limit');
+	const patch = await call('/api/v1/events/' + mine.id, { method: 'PATCH', body: { capacity: 3 } });
+	ok(patch.status === 200 && (await patch.json()).event.capacity === 3, 'API can change the limit');
+	ok((await call('/api/v1/events/' + mine.id, { method: 'PATCH', body: { capacity: 'x' } })).status === 400, 'API refuses a bad limit');
+	const clr = await call('/api/v1/events/' + mine.id, { method: 'PATCH', body: { capacity: null } });
+	ok((await clr.json()).event.capacity === null, 'API can clear the limit with null');
+}
+
+// ------------------------------------------------------------ clubs
+{
+	const mk = async (name) => {
+		const c = new Client('10.0.6.' + (10 + Math.floor(Math.random() * 200)));
+		await c.post('/login', { password: PASSWORD });
+		await c.post('/who?/create', { name });
+		return c;
+	};
+	const eve = await mk('Eve Club');
+	const finn = await mk('Finn Club');
+	const gus = await mk('Gus Club');
+	ok((await alice.post('/clubs?/create', { name: 'x' })).status === 400, 'a one-letter club name is refused');
+	const created = await alice.post('/clubs?/create', { name: 'Movie club', description: 'New releases and the odd classic' });
+	const clubPath = loc(created);
+	ok(created.status === 303 && /^\/clubs\/\d+$/.test(clubPath ?? ''), 'a club can be started');
+	const clubId = clubPath.split('/').pop();
+	const dupe = await gus.post('/clubs?/create', { name: 'movie CLUB' });
+	ok(dupe.status === 400 && (await dupe.text()).includes('already a club'), 'club names are unique, ignoring case');
+	let list = await (await eve.req('/clubs')).text();
+	ok(list.includes('Movie club') && list.includes('1 member'), 'the club list shows the club and its members');
+	await eve.post('/clubs?/join', { club: clubId });
+	let page = await (await gus.req(clubPath)).text();
+	ok(page.includes('Alice') && page.includes('Eve Club'), 'members are visible on the club page');
+	ok((await gus.req(clubPath)).status === 200 && page.includes('Join this club'), 'someone not in the club is offered Join');
+
+	const made = await alice.post('/events/new', { title: 'Club film', start_date: addDays(70), club: clubId });
+	const filmPath = loc(made);
+	ok(made.status === 303 && !!filmPath, 'an event can be put in a club');
+	ok((await (await alice.req(filmPath)).text()).includes('Movie club'), 'the event page names the club');
+	ok((await (await alice.req(clubPath)).text()).includes('Club film'), 'the club page lists its upcoming events');
+	ok((await alice.post('/events/new', { title: 'Bad club', start_date: addDays(70), club: '99999' })).status === 400, 'an unknown club is refused');
+	ok((await finn.req('/')).status === 200 && (await deckHtml(finn)).includes('Club film'), 'club events are still open to people who are not in the club');
+	ok((await (await alice.req(filmPath + '/edit')).text()).includes('selected'), 'the edit form preselects the club');
+
+	const api = await (await call('/api/v1/clubs')).json();
+	ok(api.clubs.some((c) => c.name === 'Movie club' && c.members.includes('Alice') && c.members.includes('Eve Club')), 'API lists clubs with their members');
+	const apiMake = await call('/api/v1/events', { method: 'POST', body: { title: 'Api club film', start_date: addDays(71), club: 'movie club' } });
+	const apiEv = (await apiMake.json()).event;
+	ok(apiMake.status === 201 && apiEv.club === 'Movie club', 'API puts an event in a club by name');
+	ok((await call('/api/v1/events', { method: 'POST', body: { title: 'Nope', start_date: addDays(71), club: 'No such club' } })).status === 400, 'API refuses an unknown club');
+	const keep = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { title: 'Api club film 2' } });
+	ok((await keep.json()).event.club === 'Movie club', 'API update keeps the club when it is not sent');
+	const out = await call('/api/v1/events/' + apiEv.id, { method: 'PATCH', body: { club: null } });
+	ok((await out.json()).event.club === null, 'API can take an event out of its club with null');
+
+	ok((await gus.post(clubPath + '?/delete', {})).status === 403, 'only the person who started a club can delete it');
+	ok((await gus.post(clubPath + '?/save', { name: 'Hijacked' })).status === 403, 'only the person who started a club can edit it');
+	const saved = await alice.post(clubPath + '?/save', { name: 'Film club', description: 'Cinema nights' });
+	ok(saved.status === 200 && (await (await alice.req(clubPath)).text()).includes('Film club'), 'the creator can rename the club');
+	await eve.post(clubPath + '?/leave', {});
+	ok(!(await (await alice.req(clubPath)).text()).includes('Eve Club'), 'leaving a club removes you from the members');
+	const del = await alice.post(clubPath + '?/delete', {});
+	ok(del.status === 303 && loc(del) === '/clubs', 'the creator can delete the club');
+	const after = await (await alice.req(filmPath)).text();
+	ok(after.includes('Club film') && !after.includes('Film club'), 'deleting a club keeps its events');
+}
+
+// ------------------------------------------------------------ interest level + in-app browser posts
+{
+	const mk = async (name) => {
+		const c = new Client('10.0.7.' + (10 + Math.floor(Math.random() * 200)));
+		await c.post('/login', { password: PASSWORD });
+		await c.post('/who?/create', { name });
+		return c;
+	};
+	const ivy = await mk('Ivy Meter');
+	const jon = await mk('Jon Meter');
+	const made = await alice.post('/events/new', { title: 'Meter night', start_date: addDays(80) });
+	const path = loc(made);
+	const id = Number(path.split('/').pop());
+	const swipe = (c, body) => c.req('/api/swipe', { method: 'POST', json: { eventId: id, ...body } });
+	ok((await swipe(ivy, { decision: 'interested' })).status === 200, 'swiping right saves straight away');
+	ok((await (await ivy.req(path)).text()).includes('title="Keen"'), 'the default level is Keen');
+	ok((await swipe(ivy, { decision: 'interest', interest: 3 })).status === 200, 'the level can be raised afterwards');
+	ok((await (await jon.req(path)).text()).includes("title=\"Can't wait\""), 'others see the level next to the name');
+	ok((await swipe(ivy, { decision: 'interest', interest: 4 })).status === 400, 'a level outside 1 to 3 is refused');
+	ok((await swipe(jon, { decision: 'interest', interest: 1 })).status === 200 && !(await (await jon.req(path)).text()).includes('title="Curious"'), 'you cannot set a level before you are in');
+	const form = await ivy.post(path + '?/interest', { level: '1' });
+	ok(form.status < 400 && (await (await ivy.req(path)).text()).includes('title="Curious"'), 'the event page can change your own level');
+	ok((await jon.post(path + '?/interest', { level: '2' })).status === 403, 'non-members cannot set a level on the event page');
+	await swipe(ivy, { decision: 'not_interested' });
+	await swipe(ivy, { decision: 'interested' });
+	ok((await (await ivy.req(path)).text()).includes('title="Keen"'), 'coming back in resets to Keen');
+
+	// the CSRF check lets in-app browsers (missing or "null" Origin) through but still blocks cross-site posts
+	const post = (headers) =>
+		fetch(BASE + '/login', {
+			method: 'POST',
+			redirect: 'manual',
+			headers: { 'content-type': 'application/x-www-form-urlencoded', 'cf-connecting-ip': '10.0.8.' + Math.floor(Math.random() * 250), ...headers },
+			body: new URLSearchParams({ password: 'wrong' })
+		});
+	ok((await post({})).status === 401, 'a form post with no Origin is allowed (in-app browsers)');
+	ok((await post({ origin: 'null' })).status === 401, 'a form post with a "null" Origin is allowed');
+	ok((await post({ origin: BASE })).status === 401, 'a form post from our own origin is allowed');
+	ok((await post({ origin: 'https://evil.example' })).status === 403, 'a form post from another site is blocked');
+	ok((await post({ 'sec-fetch-site': 'cross-site' })).status === 403, 'a post the browser marks cross-site is blocked');
 }
 
 // ------------------------------------------------------------ travel times (fake TfL + geocoder)
@@ -624,12 +792,17 @@ if (process.env.TRAVEL_TESTS !== '1') {
 	const bt = await (await bobT.req(`/events/${gigId}/travel`)).json();
 	ok(bt.hasStations === false && bt.rows.length === 0, 'someone with no stations gets no times (and is nudged to set them)');
 
-	const nowhere = await alice.post('/events/new', { title: 'Mystery', location: 'Nowhere Special', start_date: addDays(11) });
+	const nowhere = await alice.post('/events/new', { title: 'Mystery', location: 'Nowhere Special, London', start_date: addDays(11) });
 	const nw = await (await alice.req(`/events/${loc(nowhere).split('/').pop()}/travel`)).json();
 	ok(nw.rows.length === 0, 'an unknown or non-London venue gets no journey time');
 	const calls2 = calls.geocode;
 	await alice.req(`/events/${loc(nowhere).split('/').pop()}/travel`);
 	ok(calls.geocode === calls2, 'a venue that could not be found is not looked up again');
+
+	const geoBefore = calls.geocode;
+	const edin = await alice.post('/events/new', { title: 'Hogmanay', location: 'Edinburgh, UK', start_date: addDays(12) });
+	const ed = await (await alice.req(`/events/${loc(edin).split('/').pop()}/travel`)).json();
+	ok(ed.rows.length === 0 && calls.geocode === geoBefore, 'a venue that does not say London gets no journey time and is not looked up');
 
 	await alice.post('/stations?/save', { kind: 'work', id: 'BROKEN', name: 'Broken' });
 	const broken = await (await alice.req(`/events/${gigId}/travel`)).json();

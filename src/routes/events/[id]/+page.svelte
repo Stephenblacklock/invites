@@ -1,6 +1,6 @@
 <script>
 	import { enhance } from '$app/forms';
-	import { INTEREST, bg, countdown, fmtDate, fmtRange, hue, interestLabel, isRange, priceLabel } from '#lib/format.js';
+	import { INTEREST, bg, countdown, fmtDate, fmtRange, hue, interestLabel, isRange, priceLabel, rowAmount } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 	import { onMount } from 'svelte';
 	import MediaEmbed from '#lib/components/MediaEmbed.svelte';
@@ -8,6 +8,9 @@
 	let { data, form } = $props();
 	const ev = $derived(data.event);
 	const member = $derived(data.mine === 'interested');
+	const going = $derived(ev.interested.filter((p) => !p.waiting));
+	const waiting = $derived(ev.interested.filter((p) => p.waiting));
+	const full = $derived(ev.capacity != null && ev.going_count >= ev.capacity);
 	const finished = $derived((ev.end_date || ev.start_date) < data.today);
 	const best = $derived(Math.max(0, ...data.options.map((o) => o.voters.length)));
 	const err = (where) => (form?.where === where ? form.error : null);
@@ -39,8 +42,27 @@
 	{#if ev.location}
 		<p class="meta"><span class="k">Where</span> {ev.location}</p>
 	{/if}
-	{#if priceLabel(ev)}
-		<p class="meta"><span class="k">Price</span> {priceLabel(ev)}{ev.price_min === 0 && ev.price_max == null ? '' : ' per person'}</p>
+	{#if ev.prices.length > 1 || ev.prices[0]?.label}
+		<div class="meta">
+			<span class="k">Price</span> per person ({priceLabel(ev)})
+			<ul class="price-list">
+				{#each ev.prices as r, i (i)}
+					<li>
+						<span>{r.label || 'Ticket'}</span>
+						<strong>{rowAmount(r)}</strong>
+						{#if r.estimate}<em class="muted">estimate</em>{/if}
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{:else if priceLabel(ev)}
+		<p class="meta">
+			<span class="k">Price</span>
+			{priceLabel(ev)}{ev.price_min === 0 && ev.price_max == null ? '' : ' per person'}{ev.price_estimate ? ' (estimate)' : ''}
+		</p>
+	{/if}
+	{#if ev.club_name}
+		<p class="meta"><span class="k">Club</span> <a href="/clubs/{ev.club_id}">{ev.club_name}</a></p>
 	{/if}
 	{#if ev.decide_by && ev.decide_by >= data.today}
 		<p class="meta"><span class="k">Decide by</span> {fmtDate(ev.decide_by, data.today)}</p>
@@ -55,15 +77,27 @@
 </section>
 
 <section class="panel">
-	<h2>Who's keen <span class="count-pill">{ev.interested.length}</span></h2>
-	{#if ev.interested.length}
+	<h2>
+		Who's keen
+		<span class="count-pill">{ev.capacity != null ? `${ev.going_count} of ${ev.capacity}` : ev.interested.length}</span>
+	</h2>
+	{#if going.length}
 		<ul class="member-list">
-			{#each ev.interested as p (p.id)}
+			{#each going as p (p.id)}
 				<li><Avatars people={[p]} max={1} label={false} /> {p.name} <span class="meter" role="img" aria-label={interestLabel(p.interest)} title={interestLabel(p.interest)}>{#each [1, 2, 3] as n (n)}<i class:on={n <= p.interest}></i>{/each}</span></li>
 			{/each}
 		</ul>
 	{:else}
 		<p class="muted">Nobody yet.</p>
+	{/if}
+	{#if waiting.length}
+		<h3 class="sub-title">Waiting list</h3>
+		<ul class="member-list">
+			{#each waiting as p, i (p.id)}
+				<li><Avatars people={[p]} max={1} label={false} /> {p.name} <span class="muted">· #{i + 1}</span></li>
+			{/each}
+		</ul>
+		<p class="hint">If someone drops out, the next person on the list gets their spot.</p>
 	{/if}
 
 	{#if !finished}
@@ -85,7 +119,9 @@
 			</form>
 		{:else}
 			<form method="POST" action="?/join" use:enhance>
-				<button class="btn primary">{data.mine === 'not_interested' ? "Changed my mind, I'm in" : "I'm interested"}</button>
+				<button class="btn primary">
+					{full ? 'Join the waiting list' : data.mine === 'not_interested' ? "Changed my mind, I'm in" : "I'm interested"}
+				</button>
 			</form>
 		{/if}
 	{/if}

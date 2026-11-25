@@ -10,6 +10,6 @@
 <h1>Edit event</h1>
 
 <form method="POST" enctype="multipart/form-data" use:enhance class="card-form">
-	<EventFields values={form?.values ?? data.event} errors={form?.errors} today={data.today} allowPast />
+	<EventFields values={form?.values ?? data.event} errors={form?.errors} today={data.today} clubs={data.clubs} allowPast />
 	<button class="btn primary">Save changes</button>
 </form>

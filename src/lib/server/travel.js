@@ -76,11 +76,16 @@ function geocode(text) {
 	return p;
 }
 
+/** Journey times only make sense for London venues, so the location text has to say so (name or postcode). */
+export function inLondon(text) {
+	return /\blondon\b/i.test(text ?? '') || /\b(?:EC|WC|NW|SE|SW|[ENW])\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/i.test(text ?? '');
+}
+
 const inflight = new Map();
 /** Coordinates for an event's location text (cached on the event). Returns null when unknown or outside London. */
 async function ensureGeo(event) {
 	const text = (event.location ?? '').trim();
-	if (!text) return null;
+	if (!text || !inLondon(text)) return null;
 	if (event.geo_for === text) return event.geo_lat == null ? null : { lat: event.geo_lat, lon: event.geo_lon };
 	const k = `${event.id}|${text}`;
 	if (!inflight.has(k)) {
@@ -172,7 +177,7 @@ export function withTravel(personId, events) {
 	if (!mine.length) return events;
 	const today = todayISO();
 	return events.map((e) => {
-		if (!e.location || e.geo_for !== e.location.trim() || e.geo_lat == null) return e;
+		if (!e.location || !inLondon(e.location) || e.geo_for !== e.location.trim() || e.geo_lat == null) return e;
 		const g = { lat: e.geo_lat, lon: e.geo_lon };
 		const date = travelDate(e, today);
 		const travel = mine
@@ -191,7 +196,7 @@ export function warm(personId, events, max = 4) {
 	let n = 0;
 	for (const e of events) {
 		if (n >= max) break;
-		if (!e.location || e.travel) continue;
+		if (!e.location || !inLondon(e.location) || e.travel) continue;
 		n++;
 		travelFor(personId, e).catch(() => {});
 	}

@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { validateEvent } from '#lib/validate.js';
-import { getEvent, setImage, todayISO, updateEvent } from '#lib/server/db.js';
+import { clubIdSet, getEvent, listClubs, setImage, todayISO, updateEvent } from '#lib/server/db.js';
 import { removeImage, resolveImage } from '#lib/server/images.js';
 
 function mine(params, locals) {
@@ -11,14 +11,17 @@ function mine(params, locals) {
 }
 
 export function load({ params, locals }) {
-	return { event: mine(params, locals) };
+	return {
+		event: mine(params, locals),
+		clubs: listClubs(locals.person.id).map((c) => ({ id: c.id, name: c.name }))
+	};
 }
 
 export const actions = {
 	default: async ({ params, locals, request }) => {
 		const ev = mine(params, locals);
 		const fd = await request.formData();
-		const { ok, errors, values } = validateEvent(fd, { today: todayISO(), requireFuture: false });
+		const { ok, errors, values } = validateEvent(fd, { today: todayISO(), requireFuture: false, clubIds: clubIdSet() });
 		const img = ok ? await resolveImage({ file: fd.get('image'), url: fd.get('image_url') }) : null;
 		if (img?.error) errors.image = img.error;
 		if (!ok || img?.error) return fail(400, { errors, values: { ...values, image: ev.image } });

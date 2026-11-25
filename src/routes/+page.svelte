@@ -186,7 +186,7 @@
 					<h2>{top.title}</h2>
 					{#if top.location}<p class="loc">{top.location}</p>{/if}
 					{#if flags(top, data.today).length}
-						<p class="flags">{#each flags(top, data.today) as f (f.text)}<span class="flag" class:urgent={f.urgent} class:good={f.good}>{f.text}</span>{/each}</p>
+						<p class="flags">{#each flags(top, data.today) as f, i (i)}<span class="flag" class:urgent={f.urgent} class:good={f.good}>{f.text}</span>{/each}</p>
 					{/if}
 					{#if top.description}<p class="desc clamp">{top.description}</p>{/if}
 					{#if top.tags.length}

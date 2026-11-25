@@ -28,6 +28,48 @@ export function parsePrice(raw) {
 	return Math.round(parseFloat(t) * 100);
 }
 
+/** '3' → 3; '' → null; anything that is not a whole number from 1 to 500 → undefined (invalid). */
+export function parseCapacity(raw) {
+	const t = String(raw ?? '').trim();
+	if (!t) return null;
+	if (!/^\d{1,3}$/.test(t)) return undefined;
+	const n = parseInt(t, 10);
+	return n >= 1 && n <= 500 ? n : undefined;
+}
+
+export const MAX_PRICE_ROWS = 8;
+
+/**
+ * Price rows come from the form as price_label_N / price_amount_N / price_estimate_N.
+ * Blank rows are dropped. An amount that can't be read keeps its raw text so the form can show it again.
+ */
+function readPriceRows(fd, errors) {
+	const rows = [];
+	for (let i = 0; i < 20; i++) {
+		const label = (fd.get('price_label_' + i) ?? '').toString().trim();
+		const rawAmount = (fd.get('price_amount_' + i) ?? '').toString().trim();
+		const estimate = ['1', 'on', 'true'].includes((fd.get('price_estimate_' + i) ?? '').toString());
+		if (!label && !rawAmount) continue;
+		const amount = parsePrice(rawAmount);
+		const at = rows.length;
+		if (label.length > 40) errors['price_' + at] = 'Keep the label under 40 characters';
+		else if (amount === undefined) errors['price_' + at] = 'Enter an amount like 45 or 45.50, or "free"';
+		else if (amount === null) errors['price_' + at] = 'Add an amount for this price';
+		rows.push({ label, amount: amount ?? rawAmount, estimate });
+	}
+	if (rows.length > MAX_PRICE_ROWS) errors.prices = `Up to ${MAX_PRICE_ROWS} prices`;
+	return rows;
+}
+
+/** Lowest and highest of the valid rows (pence), for the cards. price_max stays null unless there is a real range. */
+export function priceSummary(rows) {
+	const nums = rows.filter((r) => typeof r.amount === 'number').map((r) => r.amount);
+	if (!nums.length) return { price_min: null, price_max: null, price_estimate: 0 };
+	const lo = Math.min(...nums);
+	const hi = Math.max(...nums);
+	return { price_min: lo, price_max: hi > lo ? hi : null, price_estimate: rows.some((r) => r.estimate) ? 1 : 0 };
+}
+
 export function cleanLink(raw) {
 	const s = (raw ?? '').toString().trim();
 	if (!s) return { ok: true, value: null };
@@ -43,9 +85,9 @@ export function cleanLink(raw) {
 
 /**
  * @param {FormData} fd
- * @param {{ today: string, requireFuture: boolean }} opts
+ * @param {{ today: string, requireFuture: boolean, clubIds?: Set<number> }} opts  clubIds: the clubs that exist, so a bad club is refused
  */
-export function validateEvent(fd, { today, requireFuture }) {
+export function validateEvent(fd, { today, requireFuture, clubIds = new Set() }) {
 	const get = (k) => (fd.get(k) ?? '').toString().trim();
 	const errors = {};
 	const title = get('title');
@@ -55,9 +97,11 @@ export function validateEvent(fd, { today, requireFuture }) {
 	const end = get('end_date');
 	const link = cleanLink(get('chat_link'));
 	const decideBy = get('decide_by');
-	const pMin = parsePrice(get('price_min'));
-	const pMax = parsePrice(get('price_max'));
+	const priceRows = readPriceRows(fd, errors);
 	const media = get('media_link');
+	const cap = parseCapacity(get('capacity'));
+	const clubRaw = get('club');
+	const clubId = clubRaw ? Number(clubRaw) : null;
 
 	if (!title) errors.title = 'Give it a title';
 	else if (title.length > 80) errors.title = 'Keep the title under 80 characters';
@@ -74,12 +118,8 @@ export function validateEvent(fd, { today, requireFuture }) {
 		else if (!errors.start_date && !errors.end_date && decideBy > (end || start)) errors.decide_by = 'Pick a date before the event ends';
 		else if (requireFuture && decideBy < today) errors.decide_by = 'That date has already passed';
 	}
-	if (pMin === undefined) errors.price_min = 'Enter an amount like 45 or 45.50, or "free"';
-	if (pMax === undefined) errors.price_max = 'Enter an amount like 60 or 60.50';
-	if (!errors.price_min && !errors.price_max && pMax != null) {
-		if (pMin == null) errors.price_min = 'Add the lowest price too';
-		else if (pMax < pMin) errors.price_max = 'The top price is below the lowest price';
-	}
+	if (cap === undefined) errors.capacity = 'Enter a whole number from 1 to 500, or leave it empty';
+	if (clubRaw && !(Number.isInteger(clubId) && clubIds.has(clubId))) errors.club = 'Pick one of the clubs in the list';
 	if (media && !parseMedia(media)) errors.media_link = 'Use a YouTube or Spotify link';
 	if (!link.ok) errors.chat_link = 'Enter a full http(s) link, e.g. a WhatsApp invite';
 
@@ -92,9 +132,11 @@ export function validateEvent(fd, { today, requireFuture }) {
 		end_date: end && end !== start ? end : null,
 		chat_link: link.ok ? link.value : null,
 		decide_by: decideBy || null,
-		// keep what was typed when it was invalid so the form can show it again
-		price_min: pMin === undefined ? get('price_min') : pMin,
-		price_max: pMax === undefined ? get('price_max') : pMax != null && pMax === pMin ? null : pMax,
+		prices: priceRows,
+		...priceSummary(priceRows),
+		club_id: clubRaw && errors.club === undefined ? clubId : null,
+		club: clubRaw,
+		capacity: cap === undefined ? get('capacity') : cap,
 		media_link: media ? (parseMedia(media)?.link ?? null) : null
 	};
 	return { ok: Object.keys(errors).length === 0, errors, values };

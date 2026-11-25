@@ -12,6 +12,6 @@
 
 <form method="POST" enctype="multipart/form-data" use:enhance class="card-form">
 	<PrefillBox />
-	<EventFields values={form?.values} errors={form?.errors} today={data.today} />
+	<EventFields values={form?.values} errors={form?.errors} today={data.today} clubs={data.clubs} />
 	<button class="btn primary">Add event</button>
 </form>

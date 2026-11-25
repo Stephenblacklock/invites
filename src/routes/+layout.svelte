@@ -12,7 +12,7 @@
 	{#if data.person}
 		<header class="topbar">
 			<a class="wordmark" href="/">Invites</a>
-			<a class="whoami" href="/who" title="Switch name">
+			<a class="whoami" href="/settings" title="Settings">
 				<span class="avatar sm" style:--h={hue(data.person.name)} aria-hidden="true">{data.person.name[0].toUpperCase()}</span>
 				{data.person.name}
 			</a>
@@ -32,6 +32,10 @@
 			<a href="/plans" class:active={isActive('/plans')} aria-current={isActive('/plans') ? 'page' : undefined}>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>
 				Plans
+			</a>
+			<a href="/clubs" class:active={isActive('/clubs')} aria-current={isActive('/clubs') ? 'page' : undefined}>
+				<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="9" r="3.2"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 19c.5-3.2 2.7-5 5.5-5s5 1.8 5.5 5M15 15c3 0 4.8 1.4 5.5 4"/></svg>
+				Clubs
 			</a>
 			<a href="/events/new" class:active={isActive('/events/new')} aria-current={isActive('/events/new') ? 'page' : undefined}>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/></svg>
