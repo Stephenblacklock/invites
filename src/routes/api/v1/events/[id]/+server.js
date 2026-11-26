@@ -1,4 +1,4 @@
-import { getEvent, setImage, todayISO, updateEvent } from '#lib/server/db.js';
+import { findPersonByName, getEvent, reservationProblem, setImage, setLock, setReservations, todayISO, updateEvent } from '#lib/server/db.js';
 import { removeImage, resolveImage } from '#lib/server/images.js';
 import { apiError, json, shapeDetail, validateBody } from '#lib/server/api.js';
 
@@ -24,14 +24,37 @@ export async function PATCH({ params, request, locals, url }) {
 		return apiError(400, 'Body must be valid JSON');
 	}
 	const base = { ...e, tags: e.tags };
-	const r = validateBody(body, { base, today: todayISO(), requireFuture: false });
+	const { locked: _l, lock_note: _n, reserved: _r, ...rest } = body;
+	const r = validateBody(rest, { base, today: todayISO(), requireFuture: false });
 	if (!r.ok) return apiError(400, 'Validation failed', r.errors);
 	let img = null;
 	if (body.image_url) {
 		img = await resolveImage({ url: body.image_url });
 		if (img?.error) return apiError(400, 'Validation failed', { image_url: img.error });
 	}
+	let rows = null;
+	if (body.reserved !== undefined) {
+		if (!Array.isArray(body.reserved)) return apiError(400, 'Validation failed', { reserved: 'Must be an array' });
+		rows = [];
+		for (const x of body.reserved) {
+			let pid = null;
+			if (x?.person) {
+				const p = findPersonByName(String(x.person));
+				if (!p) return apiError(400, 'Validation failed', { reserved: `No one called ${x.person}` });
+				pid = p.id;
+			}
+			rows.push({ person_id: pid, note: String(x?.note ?? '').trim() });
+		}
+		const cap = r.values.capacity ?? e.capacity;
+		const problem = reservationProblem(cap, e.interested.filter((p) => !p.waiting).map((p) => p.id), rows);
+		if (problem) return apiError(400, 'Validation failed', { reserved: problem });
+	}
 	updateEvent(e.id, r.values);
+	if (rows) setReservations(e.id, rows);
+	if (body.locked !== undefined || body.lock_note !== undefined) {
+		const lk = body.locked === undefined ? !!e.locked : !!body.locked;
+		setLock(e.id, lk, body.lock_note === undefined ? e.lock_note : body.lock_note);
+	}
 	if (img?.name) {
 		setImage(e.id, img.name);
 		removeImage(e.image);

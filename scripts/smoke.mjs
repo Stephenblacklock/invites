@@ -1044,5 +1044,65 @@ ok((await alice.req(evPath)).status === 404, 'deleted event is 404');
 	ok(eform.includes('aria-label="Main tags"') && eform.includes('>film<'), 'event form offers the main tags as quick picks');
 }
 
+// ------------------------------------------------------------ lock + held spots
+{
+	const html = async (r) => await r.text();
+	const join = async (ip, name) => {
+		await alice.post('/admin?/invite', { kind: 'one', note: 'lock ' + name });
+		const pg = await html(await alice.req('/admin'));
+		const tk = pg.match(new RegExp('token:"([A-Za-z0-9_-]{20,})",note:"lock ' + name + '"'))?.[1];
+		const c = new Client(ip);
+		await c.post('/join/' + tk, { name });
+		return c;
+	};
+	const mia = await join('10.0.13.1', 'Mia'), ned = await join('10.0.13.2', 'Ned'), ola = await join('10.0.13.3', 'Ola');
+	const mk = await alice.post('/events/new', { title: 'Lockable Dinner', start_date: addDays(9), capacity: '4' });
+	const eid = loc(mk)?.split('/').pop();
+	ok(!!eid, 'organiser creates an event with 4 spots');
+	// hold one spot for Ned and one generic
+	const people = await html(await alice.req('/events/' + eid));
+	const nedId = people.match(/<option value="(\d+)"[^>]*>Ned</)?.[1];
+	ok(!!nedId, 'organiser panel lists people to hold a spot for');
+	const rs = await alice.post('/events/' + eid + '?/reserve', [['rv_person', nedId], ['rv_note', 'Ned'], ['rv_person', ''], ['rv_note', 'plus one']]);
+	ok(rs && rs.status < 400, 'organiser can hold spots');
+	// Mia (not held) takes the only free spot, Ola waits
+	await mia.req('/api/swipe', { method: 'POST', json: { eventId: Number(eid), decision: 'interested' } });
+	await ola.req('/api/swipe', { method: 'POST', json: { eventId: Number(eid), decision: 'interested' } });
+	let page = await html(await ola.req('/events/' + eid));
+	ok(page.includes('Held spots') && page.includes('plus one'), 'event page lists the held spots');
+	ok(page.includes('Waiting list') && page.includes('Ola'), 'held spots push people to the waiting list');
+	await ned.req('/api/swipe', { method: 'POST', json: { eventId: Number(eid), decision: 'interested' } });
+	page = await html(await mia.req('/events/' + eid));
+	ok(page.includes('3 of 4'), 'the person a spot is held for goes straight in');
+	// lock
+	ok((await mia.post('/events/' + eid + '?/lock', { note: 'x' })).status === 403, 'only the organiser can lock');
+	await alice.post('/events/' + eid + '?/lock', { note: 'Booked for 3' });
+	const deckNew = await html(await (await join('10.0.13.4', 'Pat')).req('/'));
+	ok(!deckNew.includes('Lockable Dinner'), 'locked events are hidden from the deck for people who have not swiped');
+	const blocked = await (await join('10.0.13.5', 'Quin')).req('/api/swipe', { method: 'POST', json: { eventId: Number(eid), decision: 'interested' } });
+	ok(blocked.status === 409, 'swiping interested on a locked event is refused');
+	const plans = await html(await mia.req('/plans'));
+	ok(plans.includes('Lockable Dinner') && plans.includes('Locked'), 'people already in still see a locked event with a Locked flag');
+	// API
+	const api = (path, method = 'GET', body) =>
+		fetch(BASE + '/api/v1' + path, { method, headers: { authorization: 'Bearer api-token-for-smoke-tests-0123456789', 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+	const ce = await (await api('/events', 'POST', { title: 'API lock', start_date: addDays(11), capacity: 2 })).json();
+	const aid = ce.event.id;
+	const up = await api('/events/' + aid, 'PATCH', { locked: true, lock_note: 'Full house', reserved: [{ note: 'Boss' }] });
+	const uj = await up.json();
+	if (up.status !== 200) console.log(JSON.stringify(uj));
+	ok(up.status === 200 && uj.event.locked && uj.event.lock_note === 'Full house' && uj.event.held_spots.length === 1, 'API can lock and hold spots');
+	const bad = await api('/events/' + aid, 'PATCH', { reserved: [{ person: 'Nobody Here' }] });
+	ok(bad.status === 400, 'API rejects a held spot for an unknown person');
+	const over = await api('/events/' + aid, 'PATCH', { reserved: [{}, {}, {}] });
+	ok(over.status === 400, 'API rejects holding more spots than exist');
+	const clear = await (await api('/events/' + aid, 'PATCH', { locked: false, reserved: [] })).json();
+	ok(!clear.event.locked && clear.event.held_spots.length === 0, 'API can unlock and release held spots');
+	// unlock restores deck
+	await alice.post('/events/' + eid + '?/unlock', {});
+	const quinDeck = await html(await (await join('10.0.13.6', 'Rae')).req('/'));
+	ok(quinDeck.includes('Lockable Dinner'), 'unlocking brings the event back to the deck');
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

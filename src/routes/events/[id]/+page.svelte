@@ -10,7 +10,7 @@
 	const member = $derived(data.mine === 'interested');
 	const going = $derived(ev.interested.filter((p) => !p.waiting));
 	const waiting = $derived(ev.interested.filter((p) => p.waiting));
-	const full = $derived(ev.capacity != null && ev.going_count >= ev.capacity);
+	const full = $derived(ev.capacity != null && ev.going_count + (ev.held_count ?? 0) >= ev.capacity);
 	const finished = $derived((ev.end_date || ev.start_date) < data.today);
 	const best = $derived(Math.max(0, ...data.options.map((o) => o.voters.length)));
 	const err = (where) => (form?.where === where ? form.error : null);
@@ -120,6 +120,8 @@
 			<form method="POST" action="?/leave" use:enhance>
 				<button class="btn ghost">Actually, count me out</button>
 			</form>
+		{:else if data.blocked}
+			<p class="hint">🔒 This one is locked{ev.lock_note ? ` (${ev.lock_note})` : ''}. Ask {ev.creator_name} if you want in.</p>
 		{:else}
 			<form method="POST" action="?/join" use:enhance>
 				<button class="btn primary">
@@ -130,6 +132,51 @@
 	{/if}
 	{#if !ev.anytime}<p class="center-link"><a href="/events/{ev.id}/calendar.ics">Add to calendar</a></p>{/if}
 </section>
+
+{#if ev.reservations.length}
+	<section class="panel">
+		<h2>Held spots <span class="count-pill">{ev.reservations.length}</span></h2>
+		<ul class="member-list">
+			{#each ev.reservations as v (v.id)}
+				<li>🔖 {v.person ?? 'Held'}{v.note ? ` · ${v.note}` : ''}{v.taken ? ' · in' : ''}</li>
+			{/each}
+		</ul>
+	</section>
+{/if}
+
+{#if data.canEdit && !finished}
+	<section class="panel">
+		<h2>Organiser</h2>
+		{#if ev.locked}
+			<p class="hint">🔒 Locked{ev.lock_note ? `: ${ev.lock_note}` : ''}. Hidden from people who haven't joined; only held-for people can still join.</p>
+			<form method="POST" action="?/unlock" use:enhance><button class="btn ghost">Unlock</button></form>
+		{:else}
+			<form method="POST" action="?/lock" use:enhance class="stack">
+				<input name="note" maxlength="80" placeholder="Why? (optional, e.g. Booked for 6)" />
+				<button class="btn ghost">Lock this event</button>
+			</form>
+		{/if}
+		{#if ev.capacity != null}
+			<h3 class="sub-title">Hold spots</h3>
+			<form method="POST" action="?/reserve" use:enhance class="stack">
+				{#each [...ev.reservations, { person_id: null, note: '' }, { person_id: null, note: '' }] as v, i (i)}
+					<div class="row">
+						<select name="rv_person" aria-label="Held for">
+							<option value="">Anyone</option>
+							{#each data.people as p (p.id)}<option value={p.id} selected={p.id === v.person_id}>{p.name}</option>{/each}
+						</select>
+						<input name="rv_note" maxlength="40" placeholder="Note" value={v.note} />
+					</div>
+				{/each}
+				{#if err('reserve')}<p class="error" role="alert">{err('reserve')}</p>{/if}
+				<button class="btn">Save held spots</button>
+				<p class="hint">Clear both fields on a row to release it.</p>
+			</form>
+		{:else}
+			<p class="muted small">Set a number of spots (edit the event) to hold some.</p>
+		{/if}
+	</section>
+{/if}
 
 {#if ev.location}
 	<section class="panel">

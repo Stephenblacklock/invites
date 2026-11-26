@@ -102,8 +102,10 @@ export function flags(ev, today) {
 	if (ev.travel?.length) {
 		out.push({ text: ev.travel.map((t) => `${t.kind === 'home' ? 'Home' : 'Work'} ${t.minutes} min`).join(' · '), travel: true });
 	}
+	if (ev.locked) out.push({ text: ev.lock_note ? `Locked · ${ev.lock_note}` : 'Locked', urgent: true });
+	if (ev.held_count) out.push({ text: ev.held_count === 1 ? '1 spot held' : `${ev.held_count} spots held` });
 	if (ev.capacity != null) {
-		const left = ev.capacity - (ev.going_count ?? 0);
+		const left = ev.capacity - (ev.going_count ?? 0) - (ev.held_count ?? 0);
 		if (left > 0) out.push({ text: left === 1 ? '1 spot left' : `${left} spots left`, urgent: left === 1 });
 		else out.push({ text: ev.waiting_count ? `Full · ${ev.waiting_count} waiting` : 'Full', urgent: true });
 	}

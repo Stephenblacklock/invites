@@ -12,6 +12,11 @@ import {
 	getEvent,
 	getOption,
 	getSwipe,
+	joinBlocked,
+	listPeople,
+	reservationProblem,
+	setReservations,
+	setLock,
 	listComments,
 	listOptions,
 	markBooked,
@@ -40,6 +45,8 @@ export function load({ params, locals }) {
 		options: listOptions(event.id, me),
 		comments: listComments(event.id),
 		canEdit: event.created_by === me,
+		people: event.created_by === me ? listPeople() : [],
+		blocked: joinBlocked(me, event),
 		me
 	};
 }
@@ -54,7 +61,35 @@ function memberOnly(params, locals) {
 export const actions = {
 	join: ({ params, locals }) => {
 		const event = load_event(params);
+		if (joinBlocked(locals.person.id, event)) return fail(409, { where: 'join', error: 'This event is locked.' });
 		setSwipe(locals.person.id, event.id, 'interested');
+	},
+	lock: async ({ params, locals, request }) => {
+		const event = load_event(params);
+		if (event.created_by !== locals.person.id) return fail(403, { where: 'lock', error: 'Only the organiser can do that.' });
+		const fd = await request.formData();
+		setLock(event.id, true, (fd.get('note') ?? '').toString().trim());
+	},
+	reserve: async ({ params, locals, request }) => {
+		const event = load_event(params);
+		if (event.created_by !== locals.person.id) return fail(403, { where: 'reserve', error: 'Only the organiser can do that.' });
+		const fd = await request.formData();
+		const pids = fd.getAll('rv_person'), notes = fd.getAll('rv_note');
+		const rows = [];
+		for (let i = 0; i < pids.length; i++) {
+			const pid = Number(pids[i]) || null;
+			const note = (notes[i] ?? '').toString().trim();
+			if (pid || note) rows.push({ person_id: pid, note });
+		}
+		const going = event.interested.filter((p) => !p.waiting).map((p) => p.id);
+		const problem = reservationProblem(event.capacity, going, rows);
+		if (problem) return fail(400, { where: 'reserve', error: problem });
+		setReservations(event.id, rows);
+	},
+	unlock: ({ params, locals }) => {
+		const event = load_event(params);
+		if (event.created_by !== locals.person.id) return fail(403, { where: 'lock', error: 'Only the organiser can do that.' });
+		setLock(event.id, false);
 	},
 	interest: async ({ params, locals, request }) => {
 		const { event, isMember } = memberOnly(params, locals);

@@ -159,7 +159,17 @@ const MIGRATIONS = [
 	INSERT INTO invite_join (invite_id, person_id) SELECT id, used_by FROM invite WHERE used_by IS NOT NULL;
 	UPDATE invite SET uses = 1 WHERE used_by IS NOT NULL;
 	CREATE TABLE tag_primary (name TEXT PRIMARY KEY, position INTEGER NOT NULL DEFAULT 0);
-	INSERT INTO tag_primary (name, position) VALUES ('gig', 0), ('cinema', 1), ('sport', 2), ('food', 3), ('trip', 4), ('outdoors', 5);`
+	INSERT INTO tag_primary (name, position) VALUES ('gig', 0), ('cinema', 1), ('sport', 2), ('food', 3), ('trip', 4), ('outdoors', 5);`,
+	// v16: organiser controls: lock an event, and hold spots (unnamed, or for a named person on the app)
+	`ALTER TABLE event ADD COLUMN locked INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE event ADD COLUMN lock_note TEXT;
+	CREATE TABLE event_reservation (
+		id INTEGER PRIMARY KEY,
+		event_id INTEGER NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+		person_id INTEGER REFERENCES person(id) ON DELETE SET NULL,
+		note TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX event_reservation_event ON event_reservation (event_id);`
 ];
 
 let _db;
@@ -409,18 +419,39 @@ function hydrate(rows) {
 		if (!priceRows.has(pr.event_id)) priceRows.set(pr.event_id, []);
 		priceRows.get(pr.event_id).push({ label: pr.label, amount: pr.amount, estimate: !!pr.estimate });
 	}
+	const resByEvent = new Map();
+	for (const rv of db()
+		.prepare(
+			`SELECT v.id, v.event_id, v.person_id, v.note, p.name AS person_name FROM event_reservation v
+			 LEFT JOIN person p ON p.id = v.person_id WHERE v.event_id IN (${marks}) ORDER BY v.id`
+		)
+		.all(...ids)) {
+		if (!resByEvent.has(rv.event_id)) resByEvent.set(rv.event_id, []);
+		resByEvent.get(rv.event_id).push(rv);
+	}
 	return rows.map((r) => {
-		// with a limit, the first people to say they're keen get the spots and the rest wait in order
+		// with a limit, the first people to say they're keen get the spots and the rest wait in order.
+		// Held spots come off the top; someone a spot is held for goes straight in when they say they're keen.
 		const all = byEvent.get(r.id) ?? [];
+		const rsv = resByEvent.get(r.id) ?? [];
 		const cap = r.capacity ?? Infinity;
+		const heldFor = new Set(rsv.map((v) => v.person_id).filter(Boolean));
+		const queueCap = Math.max(0, cap - rsv.length);
+		let q = 0;
+		const interested = all.map((p) => (heldFor.has(p.id) ? { ...p, waiting: false } : { ...p, waiting: q++ >= queueCap }));
+		const takenIds = new Set(all.map((p) => p.id));
+		const reservations = rsv.map((v) => ({ id: v.id, person_id: v.person_id, person: v.person_name ?? null, note: v.note, taken: !!v.person_id && takenIds.has(v.person_id) }));
+		const going = interested.filter((p) => !p.waiting).length;
 		return {
 			...r,
 			tags: splitTags(r.tags),
-			interested: all.map((p, i) => ({ ...p, waiting: i >= cap })),
+			interested,
 			prices: priceRows.get(r.id) ?? [],
 			club_name: clubNames.get(r.club_id) ?? null,
-			going_count: Math.min(all.length, cap),
-			waiting_count: Math.max(0, all.length - cap),
+			going_count: going,
+			waiting_count: interested.length - going,
+			reservations,
+			held_count: reservations.filter((v) => !v.taken).length,
 			booker_name: bookers.get(r.booker_id) ?? null
 		};
 	});
@@ -633,11 +664,12 @@ export function deckFor(personId, today) {
 		.prepare(
 			`SELECT e.*, p.name AS creator_name FROM event e JOIN person p ON p.id = e.created_by
 			 WHERE NOT EXISTS (SELECT 1 FROM swipe s WHERE s.event_id = e.id AND s.person_id = ?)
+			   AND (e.locked = 0 OR EXISTS (SELECT 1 FROM event_reservation v WHERE v.event_id = e.id AND v.person_id = ?))
 			   AND COALESCE(e.end_date, e.start_date) >= ?
 			 ORDER BY CASE WHEN e.decide_by IS NOT NULL AND e.decide_by >= ? AND e.decide_by <= date(?, '+7 days') THEN 0 ELSE 1 END,
 			          e.start_date, e.id`
 		)
-		.all(personId, today, today, today);
+		.all(personId, personId, today, today, today);
 	return hydrate(rows);
 }
 
@@ -752,4 +784,40 @@ export function addComment(eventId, personId, body) {
 }
 export function deleteComment(id, personId) {
 	db().prepare('DELETE FROM comment WHERE id = ? AND person_id = ?').run(id, personId);
+}
+
+
+// ---------------------------------------------------------------- organiser controls: lock and held spots
+export function setLock(eventId, locked, note = null) {
+	db().prepare('UPDATE event SET locked = ?, lock_note = ? WHERE id = ?').run(locked ? 1 : 0, locked ? (note ?? '').slice(0, 80) || null : null, eventId);
+}
+
+/** Can this person say they're keen? Not when the event is locked, unless they're already in or a spot is held for them. */
+export function joinBlocked(personId, ev) {
+	if (!ev.locked) return false;
+	if (ev.interested.some((p) => p.id === personId)) return false;
+	return !ev.reservations.some((v) => v.person_id === personId);
+}
+
+/**
+ * Would these held spots bump anyone who is going now? rows = [{person_id, note}], goingIds = people with a spot today.
+ * Returns an error message or null.
+ */
+export function reservationProblem(capacity, goingIds, rows) {
+	if (!rows.length) return null;
+	if (capacity == null) return 'Set the number of spots first, then you can hold some.';
+	const held = new Set(rows.map((r) => r.person_id).filter(Boolean));
+	const others = goingIds.filter((id) => !held.has(id)).length;
+	if (rows.length + others > capacity) return `You can hold up to ${Math.max(0, capacity - others)} spots right now; the rest are taken by people already going.`;
+	return null;
+}
+
+/** Replace all held spots on an event (caller has checked reservationProblem). */
+export function setReservations(eventId, rows) {
+	const d = db();
+	d.transaction(() => {
+		d.prepare('DELETE FROM event_reservation WHERE event_id = ?').run(eventId);
+		const ins = d.prepare('INSERT INTO event_reservation (event_id, person_id, note) VALUES (?, ?, ?)');
+		for (const r of rows) ins.run(eventId, r.person_id ?? null, (r.note ?? '').slice(0, 40));
+	})();
 }
