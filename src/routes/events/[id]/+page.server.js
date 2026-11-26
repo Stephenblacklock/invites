@@ -14,6 +14,7 @@ import {
 	getSwipe,
 	joinBlocked,
 	listPeople,
+	responseCounts,
 	reservationProblem,
 	setReservations,
 	setLock,
@@ -46,6 +47,7 @@ export function load({ params, locals }) {
 		comments: listComments(event.id),
 		canEdit: event.created_by === me,
 		people: event.created_by === me ? listPeople() : [],
+		counts: event.created_by === me ? responseCounts(event.id) : null,
 		blocked: joinBlocked(me, event),
 		me
 	};

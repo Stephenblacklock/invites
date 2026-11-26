@@ -1,4 +1,4 @@
-import { findPersonByName, getEvent, reservationProblem, setImage, setLock, setReservations, todayISO, updateEvent } from '#lib/server/db.js';
+import { responseCounts, findPersonByName, getEvent, reservationProblem, setImage, setLock, setReservations, todayISO, updateEvent } from '#lib/server/db.js';
 import { removeImage, resolveImage } from '#lib/server/images.js';
 import { apiError, json, shapeDetail, validateBody } from '#lib/server/api.js';
 
@@ -10,7 +10,9 @@ function load(params) {
 export function GET({ params, url, locals }) {
 	const e = load(params);
 	if (!e) return apiError(404, 'No such event');
-	return json({ event: shapeDetail(e, url, locals.person.id) });
+	const detail = shapeDetail(e, url, locals.person.id);
+	if (e.created_by === locals.person.id) Object.assign(detail, { passed_count: responseCounts(e.id).passed, unseen_count: responseCounts(e.id).unseen });
+	return json({ event: detail });
 }
 
 export async function PATCH({ params, request, locals, url }) {

@@ -1074,6 +1074,10 @@ ok((await alice.req(evPath)).status === 404, 'deleted event is 404');
 	await ned.req('/api/swipe', { method: 'POST', json: { eventId: Number(eid), decision: 'interested' } });
 	page = await html(await mia.req('/events/' + eid));
 	ok(page.includes('4 of 4'), 'held spots count towards the keen total');
+	await ola.req('/api/swipe', { method: 'POST', json: { eventId: Number(eid), decision: 'not_interested' } });
+	page = await html(await alice.req('/events/' + eid));
+	ok(/1 passed or left · \d+ haven't swiped yet/.test(page), 'organiser sees how many passed');
+	ok(!(await html(await mia.req('/events/' + eid))).includes('passed or left'), 'only the organiser sees the pass count');
 	// lock
 	ok((await mia.post('/events/' + eid + '?/lock', { note: 'x' })).status === 403, 'only the organiser can lock');
 	await alice.post('/events/' + eid + '?/lock', { note: 'Booked for 3' });

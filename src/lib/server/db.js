@@ -821,3 +821,13 @@ export function setReservations(eventId, rows) {
 		for (const r of rows) ins.run(eventId, r.person_id ?? null, (r.note ?? '').slice(0, 40));
 	})();
 }
+
+/** Organiser-only tallies: people who passed or left, and active people who have not swiped on it yet. */
+export function responseCounts(eventId) {
+	const d = db();
+	const passed = d.prepare("SELECT COUNT(*) AS n FROM swipe WHERE event_id = ? AND decision = 'not_interested'").get(eventId).n;
+	const unseen = d
+		.prepare('SELECT COUNT(*) AS n FROM person p WHERE p.disabled = 0 AND NOT EXISTS (SELECT 1 FROM swipe s WHERE s.event_id = ? AND s.person_id = p.id)')
+		.get(eventId).n;
+	return { passed, unseen };
+}

@@ -24,6 +24,8 @@ const event = {
 		price_estimate: { type: 'boolean', description: 'True when any of the prices is only an estimate' },
 		anytime: { type: 'boolean', description: 'True when the event has no date yet (start_date is then null)' },
 		min_people: { type: 'integer', nullable: true, description: 'Go-ahead number of keen people, or null' },
+		passed_count: { type: 'integer', description: 'Only in get_event, and only for the creator: people who passed or left' },
+		unseen_count: { type: 'integer', description: 'Only in get_event, and only for the creator: active people who have not swiped on it yet' },
 		locked: { type: 'boolean', description: 'Organiser has locked the event: hidden from the deck for people who have not joined; only people a spot is held for can still join' },
 		lock_note: { type: 'string', nullable: true },
 		held_spots: { type: 'array', items: { type: 'object', properties: { person: { type: 'string', nullable: true }, note: { type: 'string', nullable: true }, taken: { type: 'boolean' } } }, description: 'Spots the organiser is holding; person is set when held for someone on the app' },

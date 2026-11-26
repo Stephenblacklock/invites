@@ -141,6 +141,9 @@
 {#if data.canEdit && !finished}
 	<section class="panel">
 		<h2>Organiser</h2>
+		{#if data.counts}
+			<p class="hint">{ev.interested.length} interested · {data.counts.passed} passed or left · {data.counts.unseen} haven't swiped yet</p>
+		{/if}
 		{#if ev.locked}
 			<p class="hint">🔒 Locked{ev.lock_note ? `: ${ev.lock_note}` : ''}. Hidden from people who haven't joined; only held-for people can still join.</p>
 			<form method="POST" action="?/unlock" use:enhance><button class="btn ghost">Unlock</button></form>
