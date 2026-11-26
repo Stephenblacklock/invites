@@ -10,6 +10,8 @@
 	const member = $derived(data.mine === 'interested');
 	const going = $derived(ev.interested.filter((p) => !p.waiting));
 	const waiting = $derived(ev.interested.filter((p) => p.waiting));
+	const openHeld = $derived(ev.reservations.filter((v) => !v.taken));
+	let extraRows = $state(0);
 	const full = $derived(ev.capacity != null && ev.going_count + (ev.held_count ?? 0) >= ev.capacity);
 	const finished = $derived((ev.end_date || ev.start_date) < data.today);
 	const best = $derived(Math.max(0, ...data.options.map((o) => o.voters.length)));
@@ -82,12 +84,15 @@
 <section class="panel">
 	<h2>
 		Who's keen
-		<span class="count-pill">{ev.capacity != null ? `${ev.going_count} of ${ev.capacity}` : ev.interested.length}</span>
+		<span class="count-pill">{ev.capacity != null ? `${ev.going_count + (ev.held_count ?? 0)} of ${ev.capacity}` : ev.interested.length}</span>
 	</h2>
-	{#if going.length}
+	{#if going.length || openHeld.length}
 		<ul class="member-list">
 			{#each going as p (p.id)}
 				<li><Avatars people={[p]} max={1} label={false} /> {p.name} <span class="meter" role="img" aria-label={interestLabel(p.interest)} title={interestLabel(p.interest)}>{#each [1, 2, 3] as n (n)}<i class:on={n <= p.interest}></i>{/each}</span></li>
+			{/each}
+			{#each openHeld as v (v.id)}
+				<li class="muted">🔖 {v.person ?? 'Held'}{v.note && v.note !== v.person ? ` · ${v.note}` : ''} <span class="small">(held)</span></li>
 			{/each}
 		</ul>
 	{:else}
@@ -133,17 +138,6 @@
 	{#if !ev.anytime}<p class="center-link"><a href="/events/{ev.id}/calendar.ics">Add to calendar</a></p>{/if}
 </section>
 
-{#if ev.reservations.length}
-	<section class="panel">
-		<h2>Held spots <span class="count-pill">{ev.reservations.length}</span></h2>
-		<ul class="member-list">
-			{#each ev.reservations as v (v.id)}
-				<li>🔖 {v.person ?? 'Held'}{v.note ? ` · ${v.note}` : ''}{v.taken ? ' · in' : ''}</li>
-			{/each}
-		</ul>
-	</section>
-{/if}
-
 {#if data.canEdit && !finished}
 	<section class="panel">
 		<h2>Organiser</h2>
@@ -159,7 +153,7 @@
 		{#if ev.capacity != null}
 			<h3 class="sub-title">Hold spots</h3>
 			<form method="POST" action="?/reserve" use:enhance class="stack">
-				{#each [...ev.reservations, { person_id: null, note: '' }, { person_id: null, note: '' }] as v, i (i)}
+				{#each [...ev.reservations, ...Array(Math.max(ev.reservations.length ? 0 : 1, 0) + extraRows).fill({ person_id: null, note: '' })] as v, i (i)}
 					<div class="row">
 						<select name="rv_person" aria-label="Held for">
 							<option value="">Anyone</option>
@@ -169,6 +163,7 @@
 					</div>
 				{/each}
 				{#if err('reserve')}<p class="error" role="alert">{err('reserve')}</p>{/if}
+				<button type="button" class="btn ghost" onclick={() => extraRows++}>+ Add another spot</button>
 				<button class="btn">Save held spots</button>
 				<p class="hint">Clear both fields on a row to release it.</p>
 			</form>
