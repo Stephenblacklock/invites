@@ -2,7 +2,8 @@
 	import { parseMedia } from '#lib/media.js';
 	let { link } = $props();
 	const m = $derived(parseMedia(link));
-	let open = $state(false);
+	// YouTube loads the player straight away; Spotify stays tap-to-load
+	let open = $state(parseMedia(link)?.kind === 'youtube');
 </script>
 
 {#if m}
@@ -23,7 +24,7 @@
 		{/if}
 		<p class="hint">
 			<a href={m.link} target="_blank" rel="noopener noreferrer">Open in {m.label}</a>
-			· The player only loads when you tap play.
+			{#if m.kind !== 'youtube'}· The player only loads when you tap play.{/if}
 		</p>
 	</section>
 {/if}

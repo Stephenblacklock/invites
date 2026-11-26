@@ -458,8 +458,8 @@ const call = (path, { method = 'GET', body, token = API_TOKEN_SHARED } = {}) =>
 	const filmPath = loc(made);
 	ok(made.status === 303 && !!filmPath, 'event with decide-by and trailer is created');
 	let page = await (await alice.req(filmPath)).text();
-	ok(page.includes('Play on YouTube') && page.includes('Decide by'), 'event page shows the trailer button and decide-by date');
-	ok(!page.includes('youtube-nocookie.com'), 'the player is not loaded until tapped');
+	ok(page.includes('Watch') && page.includes('Decide by'), 'event page shows the trailer section and decide-by date');
+	ok(page.includes('youtube-nocookie.com/embed/dQw4w9WgXcQ'), 'the YouTube player is embedded on the page');
 
 	// the urgent decide-by event jumps the swipe deck
 	const fresh = await mk('Deck Dana');
