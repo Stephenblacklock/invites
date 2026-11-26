@@ -156,7 +156,7 @@
 				{#each [...ev.reservations, ...Array(Math.max(ev.reservations.length ? 0 : 1, 0) + extraRows).fill({ person_id: null, note: '' })] as v, i (i)}
 					<div class="row">
 						<select name="rv_person" aria-label="Held for">
-							<option value="">Anyone</option>
+							<option value="">Other</option>
 							{#each data.people as p (p.id)}<option value={p.id} selected={p.id === v.person_id}>{p.name}</option>{/each}
 						</select>
 						<input name="rv_note" maxlength="40" placeholder="Note" value={v.note} />
