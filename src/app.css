@@ -304,3 +304,7 @@ input[type='date'] { min-height: 2.9rem; }
 	padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom)); text-align: center;
 }
 .sheet-title { margin-bottom: 0.7rem; }
+
+.check { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.25rem 0 0.75rem; }
+.check input { width: auto; margin-top: 0.2rem; }
+.check em { color: var(--muted, inherit); font-style: normal; opacity: 0.75; }

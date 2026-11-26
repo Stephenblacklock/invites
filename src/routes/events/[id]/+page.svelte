@@ -1,6 +1,6 @@
 <script>
 	import { enhance } from '$app/forms';
-	import { INTEREST, bg, countdown, fmtDate, fmtRange, hue, interestLabel, isRange, priceLabel, rowAmount } from '#lib/format.js';
+	import { INTEREST, bg, countdown, whenPill, fmtDate, fmtRange, hue, interestLabel, isRange, priceLabel, rowAmount } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 	import { onMount } from 'svelte';
 	import MediaEmbed from '#lib/components/MediaEmbed.svelte';
@@ -33,9 +33,9 @@
 <a class="back" href="/plans">← Plans</a>
 
 <header class="event-hero" class:has-image={ev.image} style:--h={hue(ev.title)} style:background-image={bg(ev.image)}>
-	<span class="pill">{countdown(ev.start_date, ev.end_date, data.today)}</span>
+	<span class="pill">{whenPill(ev, data.today)}</span>
 	<h1>{ev.title}</h1>
-	<p>{fmtRange(ev.start_date, ev.end_date, data.today)}</p>
+	<p>{ev.date_tbd ? '~' : ''}{fmtRange(ev.start_date, ev.end_date, data.today)}{ev.date_tbd ? ' (rough, date to be confirmed)' : ''}</p>
 </header>
 
 <section class="panel">
@@ -60,6 +60,9 @@
 			<span class="k">Price</span>
 			{priceLabel(ev)}{ev.price_min === 0 && ev.price_max == null ? '' : ' per person'}{ev.price_estimate ? ' (estimate)' : ''}
 		</p>
+	{/if}
+	{#if ev.price_tbd}
+		<p class="meta"><span class="k">Price</span> To be confirmed</p>
 	{/if}
 	{#if ev.club_name}
 		<p class="meta"><span class="k">Club</span> <a href="/clubs/{ev.club_id}">{ev.club_name}</a></p>

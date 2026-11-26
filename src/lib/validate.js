@@ -97,7 +97,11 @@ export function validateEvent(fd, { today, requireFuture, clubIds = new Set() })
 	const end = get('end_date');
 	const link = cleanLink(get('chat_link'));
 	const decideBy = get('decide_by');
-	const priceRows = readPriceRows(fd, errors);
+	const flag = (k) => ['1', 'on', 'true'].includes((fd.get(k) ?? '').toString());
+	const priceTbd = flag('price_tbd');
+	const dateTbd = flag('date_tbd');
+	// "price to be confirmed" and actual prices are mutually exclusive: TBC wins and the rows are dropped
+	const priceRows = priceTbd ? [] : readPriceRows(fd, errors);
 	const media = get('media_link');
 	const cap = parseCapacity(get('capacity'));
 	const clubRaw = get('club');
@@ -132,6 +136,8 @@ export function validateEvent(fd, { today, requireFuture, clubIds = new Set() })
 		end_date: end && end !== start ? end : null,
 		chat_link: link.ok ? link.value : null,
 		decide_by: decideBy || null,
+		price_tbd: priceTbd ? 1 : 0,
+		date_tbd: dateTbd ? 1 : 0,
 		prices: priceRows,
 		...priceSummary(priceRows),
 		club_id: clubRaw && errors.club === undefined ? clubId : null,

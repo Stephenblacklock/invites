@@ -27,6 +27,11 @@ export function fmtRange(start, end, today) {
 	return `${fmtDate(start, today)} – ${fmtDate(end, today)}`;
 }
 
+/** The countdown pill, or 'Date TBC' when the date isn't settled (the date itself is only a placeholder then). */
+export function whenPill(ev, today) {
+	return ev.date_tbd ? 'Date TBC' : countdown(ev.start_date, ev.end_date, today);
+}
+
 /** 'Today', 'Tomorrow', 'In 5 days', 'On now', 'Ended' */
 export function countdown(start, end, today) {
 	const last = end || start;
@@ -81,6 +86,8 @@ export function flags(ev, today) {
 	if (ev.club_name) out.push({ text: ev.club_name, club: true });
 	const price = priceLabel(ev);
 	if (price) out.push({ text: price, price: true });
+	else if (ev.price_tbd) out.push({ text: 'Price TBC', price: true });
+	if (ev.date_tbd) out.push({ text: 'Date TBC', urgent: false });
 	if (ev.travel?.length) {
 		out.push({ text: ev.travel.map((t) => `${t.kind === 'home' ? 'Home' : 'Work'} ${t.minutes} min`).join(' · '), travel: true });
 	}

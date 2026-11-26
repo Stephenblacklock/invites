@@ -940,5 +940,37 @@ ok((await alice.req(evPath)).status === 404, 'deleted event is 404');
 	ok(deck.includes('Keep your link') || deck.includes('/join/'), 'deck carries the welcome panel data');
 }
 
+// ------------------------------------------------------------ price / date TBC
+{
+	const api = (path, method = 'GET', body) =>
+		fetch(BASE + '/api/v1' + path, { method, headers: { authorization: 'Bearer api-token-for-smoke-tests-0123456789', 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+	const start = addDays(60);
+	const mkEv = await api('/events', 'POST', { title: 'TBC Test Gig', start_date: start, price_tbd: true, date_tbd: true, prices: [{ amount: 20 }] });
+	const ev = (await mkEv.json()).event;
+	ok(mkEv.status === 201 && ev.price_tbd === true && ev.date_tbd === true, 'API can mark price and date TBC');
+	ok(ev.prices.length === 0 && ev.price_min === null, 'a TBC price drops any price rows');
+	const page = await (await alice.req('/events/' + ev.id)).text();
+	ok(page.includes('To be confirmed') && page.includes('Date TBC'), 'event page shows price and date as TBC');
+	await alice.req('/api/swipe', { method: 'POST', json: { eventId: ev.id, decision: 'interested' } });
+	const plans = await (await alice.req('/plans')).text();
+	ok(plans.includes('Price TBC') && plans.includes('Date TBC'), 'cards and rows show TBC flags');
+	const feed = await (await alice.req('/settings')).text();
+	const cal = feed.match(/\/calendar\/([A-Za-z0-9_-]{32})\.ics/)?.[1];
+	const ics = await (await new Client('10.0.10.1').req('/calendar/' + cal + '.ics')).text();
+	ok(!ics.includes('TBC Test Gig'), 'a TBC-date event stays out of the calendar feed');
+	const fix = await api('/events/' + ev.id, 'PATCH', { price_tbd: false, date_tbd: false, prices: [{ label: 'Standing', amount: 25 }] });
+	const fixed = (await fix.json()).event;
+	ok(fix.status === 200 && !fixed.price_tbd && !fixed.date_tbd && fixed.prices.length === 1, 'API can clear the TBC flags and set a price');
+	ok((await api('/events/' + ev.id, 'PATCH', { date_tbd: 'yes' })).status === 400, 'TBC flags must be booleans');
+	// form: the checkbox wins over typed amounts, and the edit form remembers it
+	const made = await alice.post('/events/new', { title: 'Form TBC Gig', start_date: start, date_tbd: '1', price_tbd: '1', price_label_0: 'x', price_amount_0: '10' });
+	ok(made.status === 303, 'form accepts the TBC checkboxes');
+	const formEvId = loc(made).match(/\/events\/(\d+)/)?.[1];
+	const formEv = (await (await api('/events/' + formEvId)).json()).event;
+	ok(formEv.price_tbd && formEv.date_tbd && formEv.prices.length === 0, 'form TBC price drops the typed amount');
+	const editPage = await (await alice.req(`/events/${formEvId}/edit`)).text();
+	ok(/name="price_tbd"[^>]*checked|checked[^>]*name="price_tbd"/.test(editPage), 'edit form shows the price TBC box ticked');
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

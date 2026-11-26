@@ -1,5 +1,5 @@
 <script>
-	import { bg, countdown, flags, fmtRange, hue } from '#lib/format.js';
+	import { bg, countdown, flags, fmtRange, hue, whenPill } from '#lib/format.js';
 	import Avatars from './Avatars.svelte';
 	let { event, today } = $props();
 	const h = $derived(hue(event.title));
@@ -7,11 +7,11 @@
 
 <a class="event-row" href="/events/{event.id}" style:--h={h}>
 	<span class="date-chip" class:has-image={event.image} style:background-image={bg(event.image)}>
-		<span class="d1">{countdown(event.start_date, event.end_date, today)}</span>
+		<span class="d1">{whenPill(event, today)}</span>
 	</span>
 	<span class="event-main">
 		<strong class="event-title">{event.title}</strong>
-		<span class="muted small">{fmtRange(event.start_date, event.end_date, today)}{event.location ? ` · ${event.location}` : ''}</span>
+		<span class="muted small">{event.date_tbd ? '~' : ''}{fmtRange(event.start_date, event.end_date, today)}{event.location ? ` · ${event.location}` : ''}</span>
 		{#each flags(event, today) as f, i (i)}<span class="flag" class:urgent={f.urgent} class:good={f.good}>{f.text}</span>{/each}
 		<Avatars people={event.interested} max={4} label={false} />
 	</span>

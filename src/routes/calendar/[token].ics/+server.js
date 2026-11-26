@@ -12,7 +12,9 @@ export function GET({ params, url }) {
 	const cutoff = since.toISOString().slice(0, 10);
 	const items = eventsByDecision(person.id, 'interested')
 		.filter((e) => (e.end_date || e.start_date) >= cutoff)
-		.map((event) => ({ event, chosen: chosenDate(listOptions(event.id, person.id)) }));
+		.map((event) => ({ event, chosen: chosenDate(listOptions(event.id, person.id)) }))
+		// a date that is still TBC would put a guess in people's calendars, so wait until one is picked
+		.filter(({ event, chosen }) => !event.date_tbd || chosen);
 	return new Response(buildCalendar(items, { origin: url.origin, name: `Invites (${person.name})` }), {
 		headers: {
 			'content-type': 'text/calendar; charset=utf-8',

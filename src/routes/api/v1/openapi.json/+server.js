@@ -22,6 +22,8 @@ const event = {
 		price_min: { type: 'number', nullable: true, description: 'Price per person in GBP (0 = free), or the lowest price of a range' },
 		price_max: { type: 'number', nullable: true, description: 'Highest price per person in GBP, only for a range' },
 		price_estimate: { type: 'boolean', description: 'True when any of the prices is only an estimate' },
+		price_tbd: { type: 'boolean', description: 'True when the price is still to be confirmed (there are no price rows then)' },
+		date_tbd: { type: 'boolean', description: 'True when the date is still to be confirmed; start_date is then only a rough placeholder' },
 		prices: { type: 'array', items: priceRow, description: 'Price rows, e.g. one per venue or ticket type. price_min / price_max summarise them.' },
 		decide_by: { type: 'string', format: 'date', nullable: true, description: 'Date by which the group should decide (e.g. tickets sell out)' },
 		capacity: { type: 'integer', nullable: true, description: 'Maximum number of people (spots), or null for no limit' },
@@ -49,6 +51,8 @@ const input = {
 	price_max: { type: 'number', nullable: true, description: 'Top of a price range in GBP; needs price_min and must not be lower. null clears.' },
 	capacity: { type: 'integer', nullable: true, minimum: 1, maximum: 500, description: 'Spots: how many people can go (e.g. 3 tickets). Others can still say they are keen and wait in order. null clears.' },
 	decide_by: { type: 'string', format: 'date', nullable: true, description: 'YYYY-MM-DD, must be before the event ends. null clears it.' },
+	price_tbd: { type: 'boolean', description: 'Price still to be confirmed. true clears any price rows; false (or sending prices) turns it off.' },
+	date_tbd: { type: 'boolean', description: 'Date still to be confirmed. start_date is still required as a rough placeholder (e.g. the middle of the likely month); the app shows it as TBC and keeps it out of calendar feeds.' },
 	club: { type: 'string', nullable: true, description: 'Name of an existing club to put the event in (see list_clubs), e.g. "Movie club". null removes it from its club.' },
 	media_link: { type: 'string', nullable: true, description: 'A YouTube video/playlist or Spotify track/album/playlist/artist link (e.g. a trailer for a film, a playlist for a gig). null clears it.' },
 	image_url: { type: 'string', nullable: true, description: 'Direct https link to a JPEG, PNG, WebP or GIF (max 8 MB). The server downloads and keeps its own copy as the event banner. On update, null removes the banner.' }

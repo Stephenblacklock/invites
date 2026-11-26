@@ -22,6 +22,8 @@
 		window.addEventListener('invites:prices', onPrices);
 		return () => window.removeEventListener('invites:prices', onPrices);
 	});
+	let priceTbd = $state(untrack(() => !!values.price_tbd));
+	let dateTbd = $state(untrack(() => !!values.date_tbd));
 	const tagText = $derived(Array.isArray(values.tags) ? values.tags.join(', ') : (values.tags ?? ''));
 </script>
 
@@ -57,8 +59,17 @@
 		{#if errors.end_date}<small class="error">{errors.end_date}</small>{/if}
 	</label>
 </div>
+<label class="check">
+	<input type="checkbox" name="date_tbd" value="1" bind:checked={dateTbd} />
+	<span>Date to be confirmed <em>(the date above is a rough guess; it shows as TBC and stays out of calendars)</em></span>
+</label>
 <fieldset class="prices">
 	<legend>Price per person <em>(£, optional)</em></legend>
+	<label class="check">
+		<input type="checkbox" name="price_tbd" value="1" bind:checked={priceTbd} />
+		<span>Price to be confirmed</span>
+	</label>
+	{#if !priceTbd}
 	{#each rows as row, i (i)}
 		<div class="price-row">
 			<input name="price_label_{i}" bind:value={row.label} maxlength="40" placeholder={i === 0 ? 'Curzon, or Standing' : 'Another venue or ticket'} aria-label="What this price is for" />
@@ -73,6 +84,7 @@
 	{#if errors.prices}<small class="error">{errors.prices}</small>{/if}
 	<button type="button" class="btn" onclick={() => rows.push(blank())} disabled={rows.length >= MAX_ROWS}>Add another price</button>
 	<small class="hint">Different venues or ticket types each get a row. Cards show the range.</small>
+	{/if}
 </fieldset>
 
 <label>

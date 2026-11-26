@@ -48,6 +48,8 @@ export function shapeEvent(e, url) {
 		price_max: e.price_max == null ? null : e.price_max / 100,
 		price_estimate: !!e.price_estimate,
 		prices: (e.prices ?? []).map((r) => ({ label: r.label, amount: r.amount / 100, estimate: r.estimate })),
+		price_tbd: !!e.price_tbd,
+		date_tbd: !!e.date_tbd,
 		decide_by: e.decide_by ?? null,
 		capacity: e.capacity ?? null,
 		club: e.club_name ?? null,
@@ -78,7 +80,7 @@ export function bodyToForm(body, base = {}) {
 	const errors = {};
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return { errors: { body: 'Expected a JSON object' } };
 	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'capacity', 'club'];
-	for (const k of Object.keys(body)) if (!allowed.includes(k) && !['image_url', 'prices', 'price_min', 'price_max'].includes(k)) errors[k] = 'Unknown field';
+	for (const k of Object.keys(body)) if (!allowed.includes(k) && !['image_url', 'prices', 'price_min', 'price_max', 'price_tbd', 'date_tbd'].includes(k)) errors[k] = 'Unknown field';
 	if ('image_url' in body && body.image_url !== null && typeof body.image_url !== 'string') errors.image_url = 'Must be a string or null';
 	const fd = new FormData();
 	for (const k of allowed) {
@@ -107,6 +109,11 @@ export function bodyToForm(body, base = {}) {
 			v = '';
 		}
 		fd.set(k, v);
+	}
+	for (const k of ['price_tbd', 'date_tbd']) {
+		if (k in body && typeof body[k] !== 'boolean') errors[k] = 'Must be true or false';
+		const on = k in body ? body[k] === true : !!base[k];
+		if (on) fd.set(k, '1');
 	}
 	setPriceFields(fd, body, base, errors);
 	return { fd, errors };
