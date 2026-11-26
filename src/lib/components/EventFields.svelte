@@ -1,6 +1,7 @@
 <script>
 	import { onMount, untrack } from 'svelte';
 	import ImageField from './ImageField.svelte';
+	import { page } from '$app/state';
 	let { values = {}, errors = {}, today, allowPast = false, clubs = [] } = $props();
 	// stored as pence; while re-showing a rejected form the raw text comes back as a string
 	const money = (v) => (typeof v === 'number' ? String(v / 100) : (v ?? ''));
@@ -25,7 +26,13 @@
 	let priceTbd = $state(untrack(() => !!values.price_tbd));
 	let anytime = $state(untrack(() => !!values.anytime));
 	let dateTbd = $state(untrack(() => !!values.date_tbd));
-	const tagText = $derived(Array.isArray(values.tags) ? values.tags.join(', ') : (values.tags ?? ''));
+	let tagText = $state(untrack(() => (Array.isArray(values.tags) ? values.tags.join(', ') : (values.tags ?? ''))));
+	const primaryTags = $derived(page.data.primaryTags ?? []);
+	const tagList = $derived(tagText.split(/[,\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean));
+	function toggleTag(t) {
+		const list = tagList.includes(t) ? tagList.filter((x) => x !== t) : [...tagList, t];
+		tagText = list.join(', ');
+	}
 </script>
 
 <label>
@@ -119,8 +126,15 @@
 
 <label>
 	<span>Tags <em>(comma separated)</em></span>
-	<input name="tags" value={tagText} placeholder="festive, outdoors, food" />
+	<input name="tags" bind:value={tagText} placeholder="festive, outdoors, food" />
 </label>
+{#if primaryTags.length}
+	<div class="chips tag-picks" role="group" aria-label="Main tags">
+		{#each primaryTags as t (t)}
+			<button type="button" class="chip" class:on={tagList.includes(t)} onclick={() => toggleTag(t)}>{t}</button>
+		{/each}
+	</div>
+{/if}
 
 {#if clubs.length}
 	<label>

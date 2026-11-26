@@ -15,7 +15,7 @@ Built for a small circle of friends: **personal invite links (shared password as
 one tap signs that device in (a tap is required so link previews can't use it up). The link keeps working until an admin makes a new
 one, which also signs that person out everywhere. Find your own link in Settings, to sign in on another device.
 
-**New friends.** On `/admin` make a nameless invite link (optionally labelled), send it, and they open it, type their own name and are in. Each invite works once, expires after 14 days and can be revoked before use ("Copy message" gives a ready-to-send text); afterwards they have their own personal link like everyone else. First visit shows a dismissible welcome panel (how swiping works, keep your link, add to home screen).
+**New friends.** On `/admin` make a nameless invite link (optionally labelled), send it, and they open it, type their own name and are in. Choose "One person" or "A group chat" (up to N people, default 15, max 50) to drop one link in a group; admin shows who joined. Revoking a group link stops new joins but keeps the people already in. Each invite expires after 14 days and can be revoked before use ("Copy message" gives a ready-to-send text); afterwards they have their own personal link like everyone else. First visit shows a dismissible welcome panel (how swiping works, keep your link, add to home screen).
 
 **Admin.** The person named by `ADMIN_NAME` (default `INVITES_API_PERSON`, then `Stephen`) is admin once they exist. Admins get
 **Manage people** in Settings (`/admin`): copy anyone's link, make a new one, pause or resume them, and switch the shared password on or off.
@@ -96,6 +96,7 @@ Notes:
 
 - **TBC price and date:** tick "Price to be confirmed" / "Date to be confirmed" on the event form (or `price_tbd` / `date_tbd` in the API). A TBC price shows as "Price TBC" and drops price rows; a TBC date keeps its start date as a rough placeholder (still needed for sorting), shows as "Date TBC", and stays out of calendar feeds until a poll date is picked.
 - **Anytime events:** tick "No date yet" for things like a museum trip. No dates are needed; the card says "Anytime", it never expires, stays out of calendars, and sorts after dated events. The creator gives it a date later by editing it (or `anytime: false` + `start_date` in the API). Optional **go ahead at N** shows "2 of 4 keen" and "Enough keen" once reached. Internally the start date is the sentinel `9999-12-31`.
+- **Main tags:** admin sets a short list of main tags (default gig, cinema, sport, food, trip, outdoors). The deck shows only those as filter chips, with the rest behind "More"; the event form offers them as quick picks. Other tags still work everywhere. `GET /api/v1/tags` (`list_tags`) lists main and other tags.
 
 ## Ideas for later
 

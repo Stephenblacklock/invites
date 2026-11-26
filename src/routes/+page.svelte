@@ -20,6 +20,9 @@
 	let sheetTimer;
 
 	const allTags = $derived([...new Set(deck.flatMap((e) => e.tags))].sort());
+	let showMore = $state(false);
+	const primaryShown = $derived(data.primaryTags.filter((t) => allTags.includes(t)));
+	const otherTags = $derived(allTags.filter((t) => !data.primaryTags.includes(t)));
 	const visible = $derived(activeTag ? deck.filter((e) => e.tags.includes(activeTag)) : deck);
 	const top = $derived(visible[0]);
 	const next = $derived(visible[1]);
@@ -154,9 +157,19 @@
 {#if allTags.length > 1}
 	<div class="chips" role="group" aria-label="Filter by tag">
 		<button class="chip" class:on={!activeTag} onclick={() => (activeTag = null)}>All</button>
-		{#each allTags as t (t)}
+		{#each primaryShown as t (t)}
 			<button class="chip" class:on={activeTag === t} onclick={() => (activeTag = activeTag === t ? null : t)}>{t}</button>
 		{/each}
+		{#if otherTags.length}
+			<button class="chip more" aria-expanded={showMore || otherTags.includes(activeTag)} onclick={() => (showMore = !showMore)}>
+				{showMore || otherTags.includes(activeTag) ? 'Less ▴' : `More ▾`}
+			</button>
+			{#if showMore || otherTags.includes(activeTag)}
+				{#each otherTags as t (t)}
+					<button class="chip" class:on={activeTag === t} onclick={() => (activeTag = activeTag === t ? null : t)}>{t}</button>
+				{/each}
+			{/if}
+		{/if}
 	</div>
 {/if}
 

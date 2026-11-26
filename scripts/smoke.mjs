@@ -1004,5 +1004,45 @@ ok((await alice.req(evPath)).status === 404, 'deleted event is 404');
 	ok(bad.status === 400, 'go-ahead number cannot exceed the spots');
 }
 
+// ------------------------------------------------------------ group invites, primary tags
+{
+	const html = async (r) => await r.text();
+	const api = (path, method = 'GET', body) =>
+		fetch(BASE + '/api/v1' + path, { method, headers: { authorization: 'Bearer api-token-for-smoke-tests-0123456789', 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+	await alice.post('/admin?/invite', { kind: 'group', max: '2', note: 'Darts chat' });
+	const page = await html(await alice.req('/admin'));
+	const tok = page.match(/token:"([A-Za-z0-9_-]{20,})",note:"Darts chat"/)?.[1];
+	const iid = page.match(/id:(\d+),token:"[^"]+",note:"Darts chat"/)?.[1];
+	ok(!!tok, 'admin can make a group invite');
+	const one = new Client('10.0.12.1');
+	ok((await one.post('/join/' + tok, { name: 'Gwen' })).status === 303, 'first person joins through the group link');
+	const two = new Client('10.0.12.2');
+	ok((await two.post('/join/' + tok, { name: 'Hal' })).status === 303, 'second person joins through the same link');
+	ok((await new Client('10.0.12.3').post('/join/' + tok, { name: 'Ivy' })).status === 404, 'the link stops when it is full');
+	const after = await html(await alice.req('/admin'));
+	ok(after.includes('Gwen, Hal') || after.includes('Hal, Gwen'), 'admin sees who joined through the group link');
+	ok(after.includes('2 of 2 joined'), 'admin sees how full the group link is');
+	// revoke keeps people in, blocks new joins
+	await alice.post('/admin?/invite', { kind: 'group', max: '5', note: 'Revoked chat' });
+	const p2 = await html(await alice.req('/admin'));
+	const t2 = p2.match(/token:"([A-Za-z0-9_-]{20,})",note:"Revoked chat"/)?.[1];
+	const i2 = p2.match(/id:(\d+),token:"[^"]+",note:"Revoked chat"/)?.[1];
+	const early = new Client('10.0.12.4');
+	await early.post('/join/' + t2, { name: 'Jon' });
+	await alice.post('/admin?/revokeInvite', { id: i2 });
+	ok((await new Client('10.0.12.5').post('/join/' + t2, { name: 'Kit' })).status === 404, 'a revoked group link stops working');
+	ok((await early.req('/')).status === 200, 'people who already joined stay in after a revoke');
+	// primary tags
+	const tagsPage = await html(await alice.req('/admin'));
+	ok(tagsPage.includes('Main tags') && tagsPage.includes('gig'), 'admin shows the main tag list');
+	await alice.post('/admin?/primaryTags', { tags: 'Gig, #Film , sport' });
+	const t = await (await api('/tags')).json();
+	ok(JSON.stringify(t.primary) === JSON.stringify(['gig', 'film', 'sport']), 'main tags are saved cleaned and in order');
+	ok(Array.isArray(t.other) && !t.other.some((o) => o.tag === 'gig'), 'list_tags separates other tags from main ones');
+	ok((await one.post('/admin?/primaryTags', { tags: 'x' })).status === 403, 'non-admin cannot change main tags');
+	const eform = await html(await alice.req('/events/new'));
+	ok(eform.includes('aria-label="Main tags"') && eform.includes('>film<'), 'event form offers the main tags as quick picks');
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

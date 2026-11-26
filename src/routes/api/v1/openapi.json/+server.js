@@ -99,6 +99,16 @@ export function GET({ url }) {
 					responses: { 201: ok({ type: 'object', properties: { event: event } }, 'Created'), 400: err, 401: err, 409: err }
 				}
 			},
+			'/api/v1/tags': {
+				get: {
+					operationId: 'list_tags',
+					summary: 'The main tags (shown as filter chips) and every other tag in use with its count. Reuse these on events instead of inventing near-duplicates.',
+					responses: {
+						200: ok({ type: 'object', properties: { primary: { type: 'array', items: { type: 'string' } }, other: { type: 'array', items: { type: 'object', properties: { tag: { type: 'string' }, count: { type: 'integer' } } } } } }),
+						401: err
+					}
+				}
+			},
 			'/api/v1/clubs': {
 				get: {
 					operationId: 'list_clubs',

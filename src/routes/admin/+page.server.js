@@ -1,8 +1,12 @@
 import { error, fail } from '@sveltejs/kit';
+import { parseTagList } from '#lib/validate.js';
 import {
 	createInvite,
 	getPerson,
 	listInvites,
+	listPrimaryTags,
+	setPrimaryTags,
+	tagCounts,
 	revokeInvite,
 	listPeopleAdmin,
 	passwordLoginOn,
@@ -22,6 +26,8 @@ export function load({ locals, url }) {
 		origin: url.origin,
 		people: listPeopleAdmin(),
 		invites: listInvites().filter((i) => !i.revoked),
+		primaryTags: listPrimaryTags(),
+		tagsInUse: tagCounts().slice(0, 30),
 		passwordLogin: passwordLoginOn(),
 		meId: locals.person.id
 	};
@@ -55,7 +61,14 @@ export const actions = {
 	invite: async (event) => {
 		admin(event.locals);
 		const fd = await event.request.formData();
-		createInvite((fd.get('note') ?? '').toString().trim());
+		const group = fd.get('kind') === 'group';
+		const max = Math.min(50, Math.max(2, parseInt((fd.get('max') ?? '15').toString(), 10) || 15));
+		createInvite((fd.get('note') ?? '').toString().trim(), group ? max : 1);
+	},
+	primaryTags: async (event) => {
+		admin(event.locals);
+		const fd = await event.request.formData();
+		setPrimaryTags(parseTagList((fd.get('tags') ?? '').toString()));
 	},
 	revokeInvite: async (event) => {
 		admin(event.locals);

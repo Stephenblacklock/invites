@@ -8,6 +8,18 @@ export function isValidDate(s) {
 	return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
+/** Same cleaning as parseTags but a longer list, for the primary tag list. */
+export function parseTagList(raw, max = 12) {
+	if (typeof raw !== 'string') return [];
+	const seen = new Set();
+	for (const part of raw.split(/[,\n]/)) {
+		const t = part.trim().toLowerCase().replace(/^#/, '').replace(/\s+/g, ' ').slice(0, 24);
+		if (t) seen.add(t);
+		if (seen.size >= max) break;
+	}
+	return [...seen];
+}
+
 export function parseTags(raw) {
 	if (typeof raw !== 'string') return [];
 	const seen = new Set();

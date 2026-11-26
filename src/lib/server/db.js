@@ -146,7 +146,20 @@ const MIGRATIONS = [
 	ALTER TABLE event ADD COLUMN date_tbd INTEGER NOT NULL DEFAULT 0;`,
 	// v14: "anytime" events with no date (start_date holds a far-future sentinel) and an optional go-ahead number of keen people
 	`ALTER TABLE event ADD COLUMN anytime INTEGER NOT NULL DEFAULT 0;
-	ALTER TABLE event ADD COLUMN min_people INTEGER;`
+	ALTER TABLE event ADD COLUMN min_people INTEGER;`,
+	// v15: group invite links (several joins, tracked in invite_join) and a curated list of primary tags for the filter chips
+	`ALTER TABLE invite ADD COLUMN max_uses INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE invite ADD COLUMN uses INTEGER NOT NULL DEFAULT 0;
+	CREATE TABLE invite_join (
+		invite_id INTEGER NOT NULL REFERENCES invite(id) ON DELETE CASCADE,
+		person_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+		joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (invite_id, person_id)
+	);
+	INSERT INTO invite_join (invite_id, person_id) SELECT id, used_by FROM invite WHERE used_by IS NOT NULL;
+	UPDATE invite SET uses = 1 WHERE used_by IS NOT NULL;
+	CREATE TABLE tag_primary (name TEXT PRIMARY KEY, position INTEGER NOT NULL DEFAULT 0);
+	INSERT INTO tag_primary (name, position) VALUES ('gig', 0), ('cinema', 1), ('sport', 2), ('food', 3), ('trip', 4), ('outdoors', 5);`
 ];
 
 let _db;
@@ -251,37 +264,60 @@ export function listPeopleAdmin() {
 	return rows.map((r) => ({ ...r, token: getInviteToken(r.id) }));
 }
 
-export function createInvite(note = '') {
+/** maxUses 1 = a single person's invite; more = a group link (capped by the caller). */
+export function createInvite(note = '', maxUses = 1) {
 	const token = crypto.randomBytes(24).toString('base64url');
-	db().prepare('INSERT INTO invite (token, note) VALUES (?, ?)').run(token, note.slice(0, 40));
+	db().prepare('INSERT INTO invite (token, note, max_uses) VALUES (?, ?, ?)').run(token, note.slice(0, 40), maxUses);
 	return token;
 }
-/** An invite that hasn't been used or revoked, or null. */
+const INVITE_LIVE = "revoked = 0 AND uses < max_uses AND created_at > datetime('now', '-14 days')";
+/** An invite that can still be used (not revoked, not full, under 14 days old), or null. */
 export function openInvite(token) {
 	if (!token || token.length < 16) return null;
-	return db().prepare("SELECT id, token, note FROM invite WHERE token = ? AND used_by IS NULL AND revoked = 0 AND created_at > datetime('now', '-14 days')").get(token) ?? null;
+	return db().prepare(`SELECT id, token, note FROM invite WHERE token = ? AND ${INVITE_LIVE}`).get(token) ?? null;
 }
 export function listInvites() {
 	return db()
-		.prepare(`SELECT i.id, i.token, i.note, i.created_at, i.used_at, i.revoked, p.name AS used_name,
-			(i.used_by IS NULL AND i.created_at <= datetime('now', '-14 days')) AS expired
-			FROM invite i LEFT JOIN person p ON p.id = i.used_by ORDER BY i.id DESC LIMIT 50`)
+		.prepare(`SELECT i.id, i.token, i.note, i.max_uses, i.uses, i.revoked, i.created_at,
+			(i.uses < i.max_uses AND i.created_at <= datetime('now', '-14 days')) AS expired,
+			(SELECT group_concat(p.name, ', ') FROM invite_join j JOIN person p ON p.id = j.person_id WHERE j.invite_id = i.id) AS joined
+			FROM invite i ORDER BY i.id DESC LIMIT 50`)
 		.all();
 }
+/** Stops further joins; people who already came in through it stay in. */
 export function revokeInvite(id) {
-	db().prepare('UPDATE invite SET revoked = 1 WHERE id = ? AND used_by IS NULL').run(id);
+	db().prepare('UPDATE invite SET revoked = 1 WHERE id = ?').run(id);
 }
-/** Make the person and burn the invite in one step. */
+/** Make the person and use up one place on the invite in one step. */
 export function redeemInvite(inviteId, name) {
 	return db().transaction(() => {
 		const personId = createPerson(name);
-		const info = db()
-			.prepare(`UPDATE invite SET used_by = ?, used_at = datetime('now') WHERE id = ? AND used_by IS NULL AND revoked = 0`)
-			.run(personId, inviteId);
+		const info = db().prepare(`UPDATE invite SET uses = uses + 1 WHERE id = ? AND ${INVITE_LIVE}`).run(inviteId);
 		if (!info.changes) throw new Error('invite used');
+		db().prepare('INSERT INTO invite_join (invite_id, person_id) VALUES (?, ?)').run(inviteId, personId);
 		markInviteUsed(personId);
 		return personId;
 	})();
+}
+
+// ---------------------------------------------------------------- primary tags
+export function listPrimaryTags() {
+	return db().prepare('SELECT name FROM tag_primary ORDER BY position, name').all().map((r) => r.name);
+}
+export function setPrimaryTags(names) {
+	const d = db();
+	d.transaction(() => {
+		d.prepare('DELETE FROM tag_primary').run();
+		const ins = d.prepare('INSERT OR IGNORE INTO tag_primary (name, position) VALUES (?, ?)');
+		names.forEach((n, i) => ins.run(n, i));
+	})();
+}
+/** Every tag in use with how many events carry it, most used first. */
+export function tagCounts() {
+	const counts = new Map();
+	for (const { tags } of db().prepare('SELECT tags FROM event').all())
+		for (const t of String(tags).split(',')) if (t) counts.set(t, (counts.get(t) ?? 0) + 1);
+	return [...counts].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
 export const passwordLoginOn = () => getMeta('password_login') !== 'off';
