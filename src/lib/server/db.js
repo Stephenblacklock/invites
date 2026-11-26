@@ -143,7 +143,10 @@ const MIGRATIONS = [
 	);`,
 	// v13: price and date can be marked TBC. A TBC date keeps its start_date as a rough placeholder (sorting, spots), but is shown as TBC and kept out of calendar feeds.
 	`ALTER TABLE event ADD COLUMN price_tbd INTEGER NOT NULL DEFAULT 0;
-	ALTER TABLE event ADD COLUMN date_tbd INTEGER NOT NULL DEFAULT 0;`
+	ALTER TABLE event ADD COLUMN date_tbd INTEGER NOT NULL DEFAULT 0;`,
+	// v14: "anytime" events with no date (start_date holds a far-future sentinel) and an optional go-ahead number of keen people
+	`ALTER TABLE event ADD COLUMN anytime INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE event ADD COLUMN min_people INTEGER;`
 ];
 
 let _db;
@@ -401,10 +404,10 @@ export function createEvent(v, personId) {
 	return d.transaction(() => {
 		const info = d
 			.prepare(
-				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, price_min, price_max, price_estimate, capacity, club_id, price_tbd, date_tbd, created_by)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO event (title, description, location, tags, start_date, end_date, chat_link, decide_by, media_link, price_min, price_max, price_estimate, capacity, club_id, price_tbd, date_tbd, anytime, min_people, created_by)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, v.club_id ?? null, v.price_tbd ? 1 : 0, v.date_tbd ? 1 : 0, personId);
+			.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, v.club_id ?? null, v.price_tbd ? 1 : 0, v.date_tbd ? 1 : 0, v.anytime ? 1 : 0, v.min_people ?? null, personId);
 		const id = Number(info.lastInsertRowid);
 		setPrices(id, v.prices);
 		setSwipe(personId, id, 'interested');
@@ -424,10 +427,10 @@ export function updateEvent(id, v) {
 	db()
 		.prepare(
 			`UPDATE event SET title = ?, description = ?, location = ?, tags = ?, start_date = ?, end_date = ?, chat_link = ?,
-			   decide_by = ?, media_link = ?, price_min = ?, price_max = ?, price_estimate = ?, capacity = ?, club_id = ?, price_tbd = ?, date_tbd = ?
+			   decide_by = ?, media_link = ?, price_min = ?, price_max = ?, price_estimate = ?, capacity = ?, club_id = ?, price_tbd = ?, date_tbd = ?, anytime = ?, min_people = ?
 			 WHERE id = ?`
 		)
-		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, v.club_id ?? null, v.price_tbd ? 1 : 0, v.date_tbd ? 1 : 0, id);
+		.run(v.title, v.description, v.location, v.tags.join(','), v.start_date, v.end_date, v.chat_link, v.decide_by ?? null, v.media_link ?? null, v.price_min ?? null, v.price_max ?? null, v.price_estimate ?? 0, v.capacity ?? null, v.club_id ?? null, v.price_tbd ? 1 : 0, v.date_tbd ? 1 : 0, v.anytime ? 1 : 0, v.min_people ?? null, id);
 	setPrices(id, v.prices);
 	// Poll options that now fall outside the event's dates are no longer valid
 	db()

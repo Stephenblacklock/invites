@@ -95,6 +95,7 @@ Notes:
 - **Settings** (your name, top right): calendar feed, travel stations, switch name, sign out.
 
 - **TBC price and date:** tick "Price to be confirmed" / "Date to be confirmed" on the event form (or `price_tbd` / `date_tbd` in the API). A TBC price shows as "Price TBC" and drops price rows; a TBC date keeps its start date as a rough placeholder (still needed for sorting), shows as "Date TBC", and stays out of calendar feeds until a poll date is picked.
+- **Anytime events:** tick "No date yet" for things like a museum trip. No dates are needed; the card says "Anytime", it never expires, stays out of calendars, and sorts after dated events. The creator gives it a date later by editing it (or `anytime: false` + `start_date` in the API). Optional **go ahead at N** shows "2 of 4 keen" and "Enough keen" once reached. Internally the start date is the sentinel `9999-12-31`.
 
 ## Ideas for later
 

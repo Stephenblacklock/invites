@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { INTEREST, bg, countdown, flags, fmtRange, hue, whenPill } from '#lib/format.js';
+	import { INTEREST, bg, countdown, flags, fmtRange, hue, whenPill, dateText } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 	import Welcome from '#lib/components/Welcome.svelte';
 
@@ -183,7 +183,7 @@
 			>
 				<div class="banner" class:has-image={top.image} style:background-image={bg(top.image)}>
 					<span class="pill">{whenPill(top, data.today)}</span>
-					<span class="banner-date">{top.date_tbd ? '~' : ''}{fmtRange(top.start_date, top.end_date, data.today)}</span>
+					<span class="banner-date">{dateText(top, data.today)}</span>
 				</div>
 				<div class="card-body">
 					<h2>{top.title}</h2>

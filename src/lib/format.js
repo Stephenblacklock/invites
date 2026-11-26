@@ -29,7 +29,14 @@ export function fmtRange(start, end, today) {
 
 /** The countdown pill, or 'Date TBC' when the date isn't settled (the date itself is only a placeholder then). */
 export function whenPill(ev, today) {
+	if (ev.anytime) return 'Anytime';
 	return ev.date_tbd ? 'Date TBC' : countdown(ev.start_date, ev.end_date, today);
+}
+
+/** The date line: 'Anytime', '~15 Mar' for a rough date, or the range. */
+export function dateText(ev, today) {
+	if (ev.anytime) return 'No date yet';
+	return (ev.date_tbd ? '~' : '') + fmtRange(ev.start_date, ev.end_date, today);
 }
 
 /** 'Today', 'Tomorrow', 'In 5 days', 'On now', 'Ended' */
@@ -88,6 +95,10 @@ export function flags(ev, today) {
 	if (price) out.push({ text: price, price: true });
 	else if (ev.price_tbd) out.push({ text: 'Price TBC', price: true });
 	if (ev.date_tbd) out.push({ text: 'Date TBC', urgent: false });
+	if (ev.min_people != null) {
+		const n = ev.going_count ?? 0;
+		out.push(n >= ev.min_people ? { text: `Enough keen (${n}/${ev.min_people})`, good: true } : { text: `${n} of ${ev.min_people} keen` });
+	}
 	if (ev.travel?.length) {
 		out.push({ text: ev.travel.map((t) => `${t.kind === 'home' ? 'Home' : 'Work'} ${t.minutes} min`).join(' · '), travel: true });
 	}

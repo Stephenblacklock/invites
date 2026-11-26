@@ -1,6 +1,6 @@
 <script>
 	import { enhance } from '$app/forms';
-	import { INTEREST, bg, countdown, whenPill, fmtDate, fmtRange, hue, interestLabel, isRange, priceLabel, rowAmount } from '#lib/format.js';
+	import { INTEREST, bg, countdown, whenPill, dateText, fmtDate, fmtRange, hue, interestLabel, isRange, priceLabel, rowAmount } from '#lib/format.js';
 	import Avatars from '#lib/components/Avatars.svelte';
 	import { onMount } from 'svelte';
 	import MediaEmbed from '#lib/components/MediaEmbed.svelte';
@@ -35,7 +35,7 @@
 <header class="event-hero" class:has-image={ev.image} style:--h={hue(ev.title)} style:background-image={bg(ev.image)}>
 	<span class="pill">{whenPill(ev, data.today)}</span>
 	<h1>{ev.title}</h1>
-	<p>{ev.date_tbd ? '~' : ''}{fmtRange(ev.start_date, ev.end_date, data.today)}{ev.date_tbd ? ' (rough, date to be confirmed)' : ''}</p>
+	<p>{dateText(ev, data.today)}{ev.date_tbd ? ' (rough, date to be confirmed)' : ''}{ev.anytime ? ' · open until enough people are keen' : ''}</p>
 </header>
 
 <section class="panel">
@@ -128,7 +128,7 @@
 			</form>
 		{/if}
 	{/if}
-	<p class="center-link"><a href="/events/{ev.id}/calendar.ics">Add to calendar</a></p>
+	{#if !ev.anytime}<p class="center-link"><a href="/events/{ev.id}/calendar.ics">Add to calendar</a></p>{/if}
 </section>
 
 {#if ev.location}

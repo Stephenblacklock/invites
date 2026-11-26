@@ -37,6 +37,9 @@ export function parseCapacity(raw) {
 	return n >= 1 && n <= 500 ? n : undefined;
 }
 
+/** Stored as the start date of an "anytime" event (no date yet): sorts after everything and never passes. Shown and exported as no date. */
+export const ANYTIME = '9999-12-31';
+
 export const MAX_PRICE_ROWS = 8;
 
 /**
@@ -99,7 +102,10 @@ export function validateEvent(fd, { today, requireFuture, clubIds = new Set() })
 	const decideBy = get('decide_by');
 	const flag = (k) => ['1', 'on', 'true'].includes((fd.get(k) ?? '').toString());
 	const priceTbd = flag('price_tbd');
-	const dateTbd = flag('date_tbd');
+	const anytime = flag('anytime');
+	const dateTbd = !anytime && flag('date_tbd');
+	const minRaw = get('min_people');
+	const minPeople = parseCapacity(minRaw);
 	// "price to be confirmed" and actual prices are mutually exclusive: TBC wins and the rows are dropped
 	const priceRows = priceTbd ? [] : readPriceRows(fd, errors);
 	const media = get('media_link');
@@ -111,17 +117,19 @@ export function validateEvent(fd, { today, requireFuture, clubIds = new Set() })
 	else if (title.length > 80) errors.title = 'Keep the title under 80 characters';
 	if (description.length > 1000) errors.description = 'Keep the description under 1000 characters';
 	if (location.length > 120) errors.location = 'Keep the location under 120 characters';
-	if (!isValidDate(start)) errors.start_date = 'Pick a start date';
-	if (end && !isValidDate(end)) errors.end_date = 'That end date is not valid';
-	if (!errors.start_date && !errors.end_date && end && end < start)
+	if (!anytime && !isValidDate(start)) errors.start_date = 'Pick a start date, or tick "No date yet"';
+	if (!anytime && end && !isValidDate(end)) errors.end_date = 'That end date is not valid';
+	if (!anytime && !errors.start_date && !errors.end_date && end && end < start)
 		errors.end_date = 'End date is before the start date';
-	if (!errors.start_date && !errors.end_date && requireFuture && (end || start) < today)
+	if (!anytime && !errors.start_date && !errors.end_date && requireFuture && (end || start) < today)
 		errors.start_date = 'That event has already finished';
-	if (decideBy) {
+	if (decideBy && !anytime) {
 		if (!isValidDate(decideBy)) errors.decide_by = 'That date is not valid';
 		else if (!errors.start_date && !errors.end_date && decideBy > (end || start)) errors.decide_by = 'Pick a date before the event ends';
 		else if (requireFuture && decideBy < today) errors.decide_by = 'That date has already passed';
 	}
+	if (minPeople === undefined) errors.min_people = 'Enter a whole number from 1 to 500, or leave it empty';
+	else if (minPeople !== null && cap !== undefined && cap !== null && minPeople > cap) errors.min_people = 'That is more than the number of spots';
 	if (cap === undefined) errors.capacity = 'Enter a whole number from 1 to 500, or leave it empty';
 	if (clubRaw && !(Number.isInteger(clubId) && clubIds.has(clubId))) errors.club = 'Pick one of the clubs in the list';
 	if (media && !parseMedia(media)) errors.media_link = 'Use a YouTube or Spotify link';
@@ -132,10 +140,12 @@ export function validateEvent(fd, { today, requireFuture, clubIds = new Set() })
 		description,
 		location,
 		tags: parseTags(get('tags')),
-		start_date: start,
-		end_date: end && end !== start ? end : null,
+		start_date: anytime ? ANYTIME : start,
+		anytime: anytime ? 1 : 0,
+		min_people: minPeople === undefined ? minRaw : minPeople,
+		end_date: !anytime && end && end !== start ? end : null,
 		chat_link: link.ok ? link.value : null,
-		decide_by: decideBy || null,
+		decide_by: anytime ? null : decideBy || null,
 		price_tbd: priceTbd ? 1 : 0,
 		date_tbd: dateTbd ? 1 : 0,
 		prices: priceRows,

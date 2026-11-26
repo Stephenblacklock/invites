@@ -23,6 +23,7 @@
 		return () => window.removeEventListener('invites:prices', onPrices);
 	});
 	let priceTbd = $state(untrack(() => !!values.price_tbd));
+	let anytime = $state(untrack(() => !!values.anytime));
 	let dateTbd = $state(untrack(() => !!values.date_tbd));
 	const tagText = $derived(Array.isArray(values.tags) ? values.tags.join(', ') : (values.tags ?? ''));
 </script>
@@ -47,10 +48,15 @@
 	{#if errors.location}<small class="error">{errors.location}</small>{/if}
 </label>
 
+<label class="check">
+	<input type="checkbox" name="anytime" value="1" bind:checked={anytime} />
+	<span>No date yet <em>(for things like a museum trip: it stays open until enough people are keen, then you set a date)</em></span>
+</label>
+{#if !anytime}
 <div class="row2">
 	<label>
 		<span>Starts</span>
-		<input type="date" name="start_date" value={values.start_date ?? ''} min={allowPast ? undefined : today} required />
+		<input type="date" name="start_date" value={values.start_date && values.start_date !== '9999-12-31' ? values.start_date : ''} min={allowPast ? undefined : today} required />
 		{#if errors.start_date}<small class="error">{errors.start_date}</small>{/if}
 	</label>
 	<label>
@@ -63,6 +69,7 @@
 	<input type="checkbox" name="date_tbd" value="1" bind:checked={dateTbd} />
 	<span>Date to be confirmed <em>(the date above is a rough guess; it shows as TBC and stays out of calendars)</em></span>
 </label>
+{/if}
 <fieldset class="prices">
 	<legend>Price per person <em>(£, optional)</em></legend>
 	<label class="check">
@@ -95,11 +102,20 @@
 <p class="hint">For things with a limited number of tickets or seats. Anyone else can still say they're keen and joins a waiting list in order.</p>
 
 <label>
+	<span>Go ahead at <em>(optional, number of people)</em></span>
+	<input name="min_people" inputmode="numeric" value={values.min_people ?? ''} placeholder="4" />
+	{#if errors.min_people}<small class="error">{errors.min_people}</small>{/if}
+</label>
+<p class="hint">Cards show "2 of 4 keen", so everyone can see when there are enough.</p>
+
+{#if !anytime}
+<label>
 	<span>Decide by <em>(optional)</em></span>
 	<input type="date" name="decide_by" value={values.decide_by ?? ''} min={allowPast ? undefined : today} />
 	{#if errors.decide_by}<small class="error">{errors.decide_by}</small>{/if}
 </label>
 <p class="hint">If it runs over several days, set an end date and the group can vote on which day to go.</p>
+{/if}
 
 <label>
 	<span>Tags <em>(comma separated)</em></span>

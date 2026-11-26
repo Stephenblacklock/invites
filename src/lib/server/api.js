@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { clientIp, loginBlocked, recordLoginFailure, clearLoginFailures } from './auth.js';
 import { clubIdSet, createPerson, findPersonByName, getPerson, listClubs, listComments, listOptions } from './db.js';
-import { validateEvent } from '../validate.js';
+import { ANYTIME, validateEvent } from '../validate.js';
 
 const MIN_TOKEN_LENGTH = 24;
 const token = () => (process.env.INVITES_API_TOKEN ?? '').trim();
@@ -41,7 +41,9 @@ export function shapeEvent(e, url) {
 		description: e.description,
 		location: e.location,
 		tags: e.tags,
-		start_date: e.start_date,
+		start_date: e.anytime ? null : e.start_date,
+		anytime: !!e.anytime,
+		min_people: e.min_people ?? null,
 		end_date: e.end_date,
 		chat_link: e.chat_link,
 		price_min: e.price_min == null ? null : e.price_min / 100,
@@ -79,12 +81,15 @@ export function shapeDetail(e, url, personId) {
 export function bodyToForm(body, base = {}) {
 	const errors = {};
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return { errors: { body: 'Expected a JSON object' } };
-	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'capacity', 'club'];
-	for (const k of Object.keys(body)) if (!allowed.includes(k) && !['image_url', 'prices', 'price_min', 'price_max', 'price_tbd', 'date_tbd'].includes(k)) errors[k] = 'Unknown field';
+	const allowed = ['title', 'description', 'location', 'tags', 'start_date', 'end_date', 'chat_link', 'decide_by', 'media_link', 'capacity', 'club', 'min_people'];
+	for (const k of Object.keys(body)) if (!allowed.includes(k) && !['image_url', 'prices', 'price_min', 'price_max', 'price_tbd', 'date_tbd', 'anytime'].includes(k)) errors[k] = 'Unknown field';
 	if ('image_url' in body && body.image_url !== null && typeof body.image_url !== 'string') errors.image_url = 'Must be a string or null';
 	const fd = new FormData();
 	for (const k of allowed) {
 		let v = k in body ? body[k] : base[k];
+		// an existing anytime event holds a sentinel date; don't let it leak into a dated event by accident
+		if (k === 'start_date' && !(k in body) && base.anytime) v = '';
+		if (k === 'min_people' && typeof v === 'number') v = Number.isInteger(v) ? String(v) : 'x';
 		if (k === 'club') {
 			// clubs go by name in the API; the form holds the id
 			if (!(k in body)) v = base.club_id ? String(base.club_id) : '';
@@ -110,7 +115,7 @@ export function bodyToForm(body, base = {}) {
 		}
 		fd.set(k, v);
 	}
-	for (const k of ['price_tbd', 'date_tbd']) {
+	for (const k of ['price_tbd', 'date_tbd', 'anytime']) {
 		if (k in body && typeof body[k] !== 'boolean') errors[k] = 'Must be true or false';
 		const on = k in body ? body[k] === true : !!base[k];
 		if (on) fd.set(k, '1');

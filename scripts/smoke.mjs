@@ -972,5 +972,37 @@ ok((await alice.req(evPath)).status === 404, 'deleted event is 404');
 	ok(/name="price_tbd"[^>]*checked|checked[^>]*name="price_tbd"/.test(editPage), 'edit form shows the price TBC box ticked');
 }
 
+// ------------------------------------------------------------ anytime events, go-ahead number
+{
+	const api = (path, method = 'GET', body) =>
+		fetch(BASE + '/api/v1' + path, { method, headers: { authorization: 'Bearer api-token-for-smoke-tests-0123456789', 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+	const bare = await api('/events', 'POST', { title: 'Dateless fail' });
+	ok(bare.status === 400, 'a dated event still needs a start date');
+	const r = await api('/events', 'POST', { title: 'Museum Trip', anytime: true, min_people: 3, location: 'British Museum, London' });
+	const ev = (await r.json()).event;
+	ok(r.status === 201 && ev.anytime === true && ev.start_date === null && ev.min_people === 3, 'API creates an anytime event with a go-ahead number');
+	ok((await api('/events', 'POST', { title: 'Museum Trip', anytime: true })).status === 409, 'duplicate anytime titles are refused');
+	const list = (await (await api('/events')).json()).events;
+	ok(list.some((e) => e.id === ev.id && e.start_date === null), 'anytime events are in the upcoming list');
+	const page = await (await alice.req('/events/' + ev.id)).text();
+	ok(page.includes('No date yet') && !page.includes('Add to calendar'), 'event page shows no date and no calendar link');
+	ok((await alice.req('/events/' + ev.id + '/calendar.ics')).status === 404, 'an anytime event has no .ics');
+	await alice.req('/api/swipe', { method: 'POST', json: { eventId: ev.id, decision: 'interested' } });
+	const plans = await (await alice.req('/plans')).text();
+	ok(plans.includes('Anytime') && plans.includes('of 3 keen'), 'plans show Anytime and progress to the go-ahead number');
+	const feed = (await (await alice.req('/settings')).text()).match(/\/calendar\/([A-Za-z0-9_-]{32})\.ics/)?.[1];
+	ok(!(await (await new Client('10.0.11.1').req('/calendar/' + feed + '.ics')).text()).includes('Museum Trip'), 'anytime events stay out of the calendar feed');
+	ok((await api('/events/' + ev.id, 'PATCH', { anytime: false })).status === 400, 'giving it a date needs a start date');
+	const dated = await api('/events/' + ev.id, 'PATCH', { anytime: false, start_date: addDays(40) });
+	const d = (await dated.json()).event;
+	ok(dated.status === 200 && d.anytime === false && d.start_date === addDays(40) && d.min_people === 3, 'setting a date turns it into a normal dated event');
+	ok((await api('/events/' + ev.id, 'PATCH', { min_people: 'lots' })).status === 400, 'min_people must be a number');
+	// form: no date needed when ticked, and over-capacity go-ahead is refused
+	const f = await alice.post('/events/new', { title: 'Form Anytime', anytime: '1', min_people: '4' });
+	ok(f.status === 303, 'form creates an anytime event without dates');
+	const bad = await alice.post('/events/new', { title: 'Too many', anytime: '1', capacity: '2', min_people: '5' });
+	ok(bad.status === 400, 'go-ahead number cannot exceed the spots');
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);
